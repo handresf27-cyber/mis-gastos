@@ -109,6 +109,31 @@ const Api = {
     return this.request(`/api/fixed-plans/copy-previous?year=${year}&month=${month}`, { method: "POST" });
   },
 
+  listCreditCards() {
+    return this.request("/api/credit-cards");
+  },
+  createCreditCard(body) {
+    return this.request("/api/credit-cards", { method: "POST", body });
+  },
+  updateCreditCard(id, body) {
+    return this.request(`/api/credit-cards/${id}`, { method: "PUT", body });
+  },
+  deleteCreditCard(id) {
+    return this.request(`/api/credit-cards/${id}`, { method: "DELETE" });
+  },
+  listPurchases(cardId) {
+    return this.request(`/api/credit-cards/${cardId}/purchases`);
+  },
+  createPurchase(cardId, body) {
+    return this.request(`/api/credit-cards/${cardId}/purchases`, { method: "POST", body });
+  },
+  updatePurchase(cardId, purchaseId, body) {
+    return this.request(`/api/credit-cards/${cardId}/purchases/${purchaseId}`, { method: "PUT", body });
+  },
+  deletePurchase(cardId, purchaseId) {
+    return this.request(`/api/credit-cards/${cardId}/purchases/${purchaseId}`, { method: "DELETE" });
+  },
+
   listCategories() {
     return this.request("/api/categories");
   },

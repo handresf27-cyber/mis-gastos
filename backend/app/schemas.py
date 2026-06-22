@@ -157,3 +157,57 @@ class CategoryOut(CategoryCreate):
 
     class Config:
         from_attributes = True
+
+
+# ---------- Credit Cards ----------
+
+class CreditPurchaseCreate(BaseModel):
+    description: str
+    total_amount: float = Field(gt=0)
+    installments: int = Field(ge=1, default=1)
+    first_payment_month: int = Field(ge=1, le=12)
+    first_payment_year: int
+    notes: Optional[str] = None
+
+
+class CreditPurchaseUpdate(BaseModel):
+    description: Optional[str] = None
+    total_amount: Optional[float] = None
+    installments: Optional[int] = None
+    first_payment_month: Optional[int] = None
+    first_payment_year: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class CreditPurchaseOut(BaseModel):
+    id: int
+    card_id: int
+    description: str
+    total_amount: float
+    installments: int
+    first_payment_month: int
+    first_payment_year: int
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CreditCardCreate(BaseModel):
+    name: str
+    color: str = "#6c8fc7"
+
+
+class CreditCardUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
+class CreditCardOut(BaseModel):
+    id: int
+    name: str
+    color: str
+    purchases: List[CreditPurchaseOut] = []
+
+    class Config:
+        from_attributes = True

@@ -99,11 +99,16 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
 
-  const titles = { home: "Inicio", metrics: "Métricas", categories: "Categorías" };
-  document.getElementById("topbar-title").firstChild.textContent = titles[view] + " ";
+  const titles = { home: "Inicio", metrics: "Métricas", cards: "Tarjetas de Crédito", categories: "Categorías" };
+  document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
+
+  // El navegador de meses solo aplica a vistas de home/metrics
+  const monthDependentViews = ["home", "metrics"];
+  document.getElementById("month-nav").style.display = monthDependentViews.includes(view) ? "" : "none";
 
   if (view === "home") loadHome();
   if (view === "metrics") loadMetrics();
+  if (view === "cards") loadCards();
   if (view === "categories") loadCategories();
 }
 
@@ -802,6 +807,260 @@ document.getElementById("balance-save").addEventListener("click", async () => {
   } catch (err) { showToast(err.message); }
 });
 
+
+// ============================================================
+// TARJETAS DE CRÉDITO
+// ============================================================
+
+const CARD_COLORS = ["#8b5cf6","#e2685a","#5fb87a","#d4a843","#6c8fc7","#f472b6"];
+
+function purchaseStatus(p) {
+  const now = new Date();
+  const refYear = now.getFullYear();
+  const refMonth = now.getMonth() + 1;
+  const monthlyFee = p.total_amount / p.installments;
+  // cuotas transcurridas desde la primera cuota hasta hoy (inclusive)
+  const elapsed = (refYear - p.first_payment_year) * 12 + (refMonth - p.first_payment_month) + 1;
+  const paid = Math.max(0, Math.min(p.installments, elapsed));
+  const remaining = p.installments - paid;
+  return {
+    monthlyFee,
+    paid,
+    remaining,
+    remainingAmount: remaining * monthlyFee,
+    pct: Math.round((paid / p.installments) * 100),
+    finished: paid >= p.installments,
+  };
+}
+
+function renderCards(cards) {
+  const list = document.getElementById("cards-list");
+
+  // total cuota mensual de todas las tarjetas (solo compras activas)
+  let grandTotal = 0;
+  cards.forEach((card) => {
+    card.purchases.forEach((p) => {
+      const s = purchaseStatus(p);
+      if (!s.finished) grandTotal += s.monthlyFee;
+    });
+  });
+  document.getElementById("cards-total-monthly").textContent = cop(grandTotal);
+
+  if (!cards.length) {
+    list.innerHTML = `<div class="fp-empty" style="margin-top:24px;">No tienes tarjetas registradas.<br>Agrega tu primera con el botón arriba.</div>`;
+    return;
+  }
+
+  list.innerHTML = cards.map((card) => {
+    const activePurchases = card.purchases.filter((p) => !purchaseStatus(p).finished);
+    const cardMonthly = activePurchases.reduce((s, p) => s + purchaseStatus(p).monthlyFee, 0);
+
+    const purchasesHtml = card.purchases.length
+      ? card.purchases.map((p) => {
+          const s = purchaseStatus(p);
+          const MONTH_NAMES_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+          const startLabel = `${MONTH_NAMES_SHORT[p.first_payment_month - 1]} ${p.first_payment_year}`;
+          return `
+            <div class="purchase-row${s.finished ? " purchase-done" : ""}" data-purchase-id="${p.id}" data-card-id="${card.id}">
+              <div class="purchase-top">
+                <div class="purchase-desc">${escapeHtml(p.description)}</div>
+                <div class="purchase-fee tabular" style="color:${s.finished ? "var(--text-faint)" : card.color}">${s.finished ? "Terminada" : cop(s.monthlyFee) + "/mes"}</div>
+              </div>
+              <div class="purchase-meta">
+                ${cop(p.total_amount)} · ${p.installments} cuota${p.installments > 1 ? "s" : ""} · desde ${startLabel}
+              </div>
+              <div class="purchase-progress">
+                <div class="progress-bar">
+                  <div class="progress-fill" style="width:${s.pct}%;background:${card.color}"></div>
+                </div>
+                <div class="progress-label">${s.paid}/${p.installments} · ${s.finished ? "Pagada" : "Falta " + cop(s.remainingAmount)}</div>
+              </div>
+            </div>`;
+        }).join("")
+      : `<div class="fp-empty">Sin compras registradas.</div>`;
+
+    return `
+      <div class="credit-card-block" id="card-block-${card.id}">
+        <div class="credit-card-head">
+          <div class="cc-chip" style="background:${card.color}"></div>
+          <div class="cc-info">
+            <div class="cc-name">${escapeHtml(card.name)}</div>
+            <div class="cc-monthly tabular">${cop(cardMonthly)}<span class="cc-monthly-label">/mes · ${activePurchases.length} compra${activePurchases.length !== 1 ? "s" : ""} activa${activePurchases.length !== 1 ? "s" : ""}</span></div>
+          </div>
+          <div class="cc-actions">
+            <button class="btn-icon add-purchase-btn" data-card-id="${card.id}" title="Agregar compra">+</button>
+            <button class="btn-icon edit-card-btn" data-card-id="${card.id}" title="Editar tarjeta">✎</button>
+          </div>
+        </div>
+        <div class="purchases-list">${purchasesHtml}</div>
+      </div>`;
+  }).join("");
+
+  // Listeners: agregar compra
+  list.querySelectorAll(".add-purchase-btn").forEach((btn) => {
+    btn.addEventListener("click", () => openPurchaseModal(parseInt(btn.dataset.cardId)));
+  });
+  // Listeners: editar tarjeta
+  list.querySelectorAll(".edit-card-btn").forEach((btn) => {
+    btn.addEventListener("click", () => openCardModal(parseInt(btn.dataset.cardId)));
+  });
+  // Listeners: editar compra
+  list.querySelectorAll(".purchase-row").forEach((row) => {
+    row.addEventListener("click", () => openPurchaseModal(parseInt(row.dataset.cardId), parseInt(row.dataset.purchaseId)));
+  });
+}
+
+async function loadCards() {
+  try {
+    const cards = await Api.listCreditCards();
+    state.creditCards = cards;
+    renderCards(cards);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+// ---- Modal de tarjeta ----
+let _editingCardId = null;
+
+function openCardModal(cardId = null) {
+  _editingCardId = cardId;
+  const card = cardId ? (state.creditCards || []).find((c) => c.id === cardId) : null;
+  document.getElementById("card-modal-title").textContent = card ? "Editar tarjeta" : "Nueva tarjeta";
+  document.getElementById("card-name").value = card ? card.name : "";
+  document.getElementById("card-modal-delete").classList.toggle("hidden", !card);
+
+  // color picker
+  const selectedColor = card ? card.color : CARD_COLORS[0];
+  document.querySelectorAll(".color-dot").forEach((dot) => {
+    dot.classList.toggle("active", dot.dataset.color === selectedColor);
+  });
+
+  document.getElementById("modal-card").classList.remove("hidden");
+  document.getElementById("card-name").focus();
+}
+
+function closeCardModal() {
+  document.getElementById("modal-card").classList.add("hidden");
+}
+
+document.getElementById("card-modal-close").addEventListener("click", closeCardModal);
+document.getElementById("card-modal-cancel").addEventListener("click", closeCardModal);
+
+document.querySelectorAll(".color-dot").forEach((dot) => {
+  dot.addEventListener("click", () => {
+    document.querySelectorAll(".color-dot").forEach((d) => d.classList.remove("active"));
+    dot.classList.add("active");
+  });
+});
+
+document.getElementById("add-card-btn").addEventListener("click", () => openCardModal());
+
+document.getElementById("card-modal-save").addEventListener("click", async () => {
+  const name = document.getElementById("card-name").value.trim();
+  if (!name) { showToast("Escribe el nombre de la tarjeta"); return; }
+  const activeDot = document.querySelector(".color-dot.active");
+  const color = activeDot ? activeDot.dataset.color : CARD_COLORS[0];
+  try {
+    if (_editingCardId) {
+      await Api.updateCreditCard(_editingCardId, { name, color });
+    } else {
+      await Api.createCreditCard({ name, color });
+    }
+    closeCardModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("card-modal-delete").addEventListener("click", async () => {
+  if (!_editingCardId) return;
+  const card = (state.creditCards || []).find((c) => c.id === _editingCardId);
+  if (!confirm(`¿Eliminar la tarjeta "${card?.name}"? Se borrarán todas sus compras.`)) return;
+  try {
+    await Api.deleteCreditCard(_editingCardId);
+    closeCardModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+// ---- Modal de compra ----
+let _editingPurchaseCardId = null;
+let _editingPurchaseId = null;
+
+function openPurchaseModal(cardId, purchaseId = null) {
+  _editingPurchaseCardId = cardId;
+  _editingPurchaseId = purchaseId;
+
+  const purchase = purchaseId
+    ? (state.creditCards || []).flatMap((c) => c.purchases).find((p) => p.id === purchaseId)
+    : null;
+
+  document.getElementById("purchase-modal-title").textContent = purchase ? "Editar compra" : "Nueva compra / avance";
+  document.getElementById("purchase-desc").value = purchase ? purchase.description : "";
+  document.getElementById("purchase-amount").value = purchase ? purchase.total_amount : "";
+  document.getElementById("purchase-installments").value = purchase ? purchase.installments : 1;
+  document.getElementById("purchase-notes").value = purchase ? (purchase.notes || "") : "";
+
+  const now = new Date();
+  document.getElementById("purchase-month").value = purchase ? purchase.first_payment_month : (now.getMonth() + 1);
+  document.getElementById("purchase-year").value = purchase ? purchase.first_payment_year : now.getFullYear();
+
+  document.getElementById("purchase-modal-delete").classList.toggle("hidden", !purchase);
+  updateFeePreview();
+
+  document.getElementById("modal-purchase").classList.remove("hidden");
+  document.getElementById("purchase-desc").focus();
+}
+
+function closePurchaseModal() {
+  document.getElementById("modal-purchase").classList.add("hidden");
+}
+
+function updateFeePreview() {
+  const amount = parseFloat(document.getElementById("purchase-amount").value) || 0;
+  const installments = parseInt(document.getElementById("purchase-installments").value) || 1;
+  document.getElementById("purchase-fee-preview").textContent = cop(installments > 0 ? amount / installments : 0);
+}
+
+document.getElementById("purchase-modal-close").addEventListener("click", closePurchaseModal);
+document.getElementById("purchase-modal-cancel").addEventListener("click", closePurchaseModal);
+
+["purchase-amount", "purchase-installments"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", updateFeePreview);
+});
+
+document.getElementById("purchase-modal-save").addEventListener("click", async () => {
+  const description = document.getElementById("purchase-desc").value.trim();
+  const total_amount = parseFloat(document.getElementById("purchase-amount").value);
+  const installments = parseInt(document.getElementById("purchase-installments").value) || 1;
+  const first_payment_month = parseInt(document.getElementById("purchase-month").value);
+  const first_payment_year = parseInt(document.getElementById("purchase-year").value);
+  const notes = document.getElementById("purchase-notes").value.trim() || null;
+
+  if (!description) { showToast("Escribe una descripción"); return; }
+  if (!total_amount || total_amount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
+
+  const body = { description, total_amount, installments, first_payment_month, first_payment_year, notes };
+  try {
+    if (_editingPurchaseId) {
+      await Api.updatePurchase(_editingPurchaseCardId, _editingPurchaseId, body);
+    } else {
+      await Api.createPurchase(_editingPurchaseCardId, body);
+    }
+    closePurchaseModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("purchase-modal-delete").addEventListener("click", async () => {
+  if (!_editingPurchaseId) return;
+  if (!confirm("¿Eliminar esta compra?")) return;
+  try {
+    await Api.deletePurchase(_editingPurchaseCardId, _editingPurchaseId);
+    closePurchaseModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
 
 async function bootstrapApp() {
   state.categories = await Api.listCategories().catch(() => []);

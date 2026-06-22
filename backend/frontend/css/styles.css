@@ -577,3 +577,78 @@ a { color: var(--accent); text-decoration: none; }
 .fp-progress { font-size: 11.5px; color: var(--text-muted); text-align: right; flex-shrink: 0; max-width: 120px; line-height: 1.4; }
 
 .payroll-col-title.accent { color: var(--accent); }
+
+/* ============================================================
+   TARJETAS DE CRÉDITO
+   ============================================================ */
+
+.cards-header {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px;
+}
+.cards-header-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.cards-header-total { font-size: 26px; font-weight: 700; color: var(--text); font-family: var(--font-display); }
+
+.credit-card-block {
+  background: var(--surface); border-radius: var(--radius-md);
+  border: 1px solid var(--border); margin-bottom: 14px;
+  overflow: hidden;
+}
+.credit-card-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; cursor: default;
+}
+.cc-chip {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  opacity: 0.9;
+}
+.cc-info { flex: 1; min-width: 0; }
+.cc-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.cc-monthly { font-size: 17px; font-weight: 700; color: var(--text); font-family: var(--font-display); }
+.cc-monthly-label { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+.cc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-icon {
+  background: var(--surface-hover); border: 1px solid var(--border);
+  border-radius: 8px; width: 32px; height: 32px;
+  color: var(--text-muted); font-size: 15px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: color .15s, background .15s;
+}
+.btn-icon:hover { color: var(--accent); background: var(--accent-soft); }
+
+.purchases-list { border-top: 1px solid var(--border); }
+
+.purchase-row {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s;
+}
+.purchase-row:last-child { border-bottom: none; }
+.purchase-row:hover { background: var(--surface-hover); }
+.purchase-row.purchase-done { opacity: .55; }
+
+.purchase-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.purchase-desc { font-size: 14px; font-weight: 500; color: var(--text); }
+.purchase-fee { font-size: 14px; font-weight: 600; flex-shrink: 0; }
+.purchase-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+.purchase-progress { margin-top: 8px; }
+.progress-bar {
+  height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;
+}
+.progress-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+.progress-label { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+
+/* Color picker de tarjetas */
+.color-picker { display: flex; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
+.color-dot {
+  width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent;
+  cursor: pointer; transition: border-color .15s, transform .1s;
+}
+.color-dot:hover { transform: scale(1.1); }
+.color-dot.active { border-color: var(--text); }
+
+/* Preview cuota mensual */
+.purchase-fee-preview {
+  font-size: 20px; font-weight: 700; color: var(--accent);
+  font-family: var(--font-display); padding: 6px 0;
+}

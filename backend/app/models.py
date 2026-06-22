@@ -35,6 +35,9 @@ class User(Base):
     fixed_plans = relationship(
         "FixedExpensePlan", back_populates="owner", cascade="all, delete-orphan"
     )
+    credit_cards = relationship(
+        "CreditCard", back_populates="owner", cascade="all, delete-orphan"
+    )
 
 
 class Category(Base):
@@ -109,3 +112,34 @@ class MonthlyStatement(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="statements")
+
+
+class CreditCard(Base):
+    """Tarjeta de crédito del usuario."""
+    __tablename__ = "credit_cards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    color = Column(String, default="#6c8fc7", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="credit_cards")
+    purchases = relationship("CreditPurchase", back_populates="card", cascade="all, delete-orphan")
+
+
+class CreditPurchase(Base):
+    """Compra o avance en cuotas de una tarjeta de crédito."""
+    __tablename__ = "credit_purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    card_id = Column(Integer, ForeignKey("credit_cards.id"), nullable=False)
+    description = Column(String, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    installments = Column(Integer, nullable=False, default=1)
+    first_payment_month = Column(Integer, nullable=False)
+    first_payment_year = Column(Integer, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    card = relationship("CreditCard", back_populates="purchases")
