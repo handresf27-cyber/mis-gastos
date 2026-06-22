@@ -168,44 +168,44 @@
             </div>
           </div>
 
-          <!-- Panel de gastos fijos planificados -->
-          <div class="panel" id="fixed-plans-panel">
-            <button class="panel-head" id="fixed-plans-toggle">
-              <span>Gastos fijos del mes</span>
-              <span class="panel-net tabular" id="fp-total">$0</span>
-              <span class="panel-chevron" id="fixed-plans-chevron">▾</span>
-            </button>
-            <div class="panel-body" id="fixed-plans-body">
-              <div id="fixed-plans-list"></div>
-              <div class="fp-add-row">
-                <input type="text" id="new-plan-name" placeholder="Ej. Arriendo, Internet..." />
-                <input type="number" id="new-plan-amount" placeholder="Valor" step="1" min="0" />
-                <button class="btn btn-ghost" id="add-plan-btn">Agregar</button>
-              </div>
-              <div class="fp-footer">
-                <button class="btn-text" id="copy-prev-plans-btn">↩ Copiar del mes anterior</button>
+          <!-- Dos columnas: Gastos Fijos | Gastos Variables -->
+          <div class="two-col-grid">
+
+            <!-- IZQUIERDA: Gastos Fijos (checklist) -->
+            <div class="col-card col-fixed-card">
+              <div class="col-head">
+                <div>
+                  <div class="col-label" style="color:var(--fixed-color)">📌 Gastos Fijos</div>
+                  <div class="col-total tabular" id="stat-fixed">$0</div>
+                </div>
                 <span class="fp-progress" id="fp-progress"></span>
               </div>
+              <input type="text" id="filter-fixed" class="col-search" placeholder="Buscar gasto fijo..." />
+              <div id="fixed-plans-list"></div>
+              <div class="fp-add-row" style="margin-top:14px;">
+                <input type="text" id="new-plan-name" placeholder="Nuevo gasto fijo..." />
+                <input type="number" id="new-plan-amount" placeholder="Valor" step="1" min="0" />
+                <button class="btn btn-ghost" id="add-plan-btn">+</button>
+              </div>
+              <button class="btn-text" id="copy-prev-plans-btn" style="margin-top:10px;font-size:12px;">↩ Copiar del mes anterior</button>
             </div>
-          </div>
 
-          <div class="stat-grid">
-            <div class="stat-chip fixed">
-              <div class="stat-label">Gastos fijos</div>
-              <div class="stat-value tabular" id="stat-fixed">$0</div>
+            <!-- DERECHA: Gastos Variables -->
+            <div class="col-card col-variable-card">
+              <div class="col-head">
+                <div>
+                  <div class="col-label" style="color:var(--negative)">🧾 Gastos Variables</div>
+                  <div class="col-total tabular" id="stat-variable">$0</div>
+                </div>
+                <span class="count" id="tx-count"></span>
+              </div>
+              <select id="filter-variable-cat" class="col-search">
+                <option value="">Todas las categorías</option>
+              </select>
+              <div id="tx-list"></div>
             </div>
-            <div class="stat-chip variable">
-              <div class="stat-label">Gastos variables</div>
-              <div class="stat-value tabular" id="stat-variable">$0</div>
-            </div>
-          </div>
 
-          <div class="section-head">
-            <h2>Movimientos</h2>
-            <span class="count" id="tx-count">0</span>
           </div>
-
-          <div id="tx-list"></div>
         </section>
 
         <!-- METRICS -->

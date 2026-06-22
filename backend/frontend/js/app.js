@@ -235,11 +235,10 @@ async function loadHome() {
   renderFixedPlans(plans);
 
   // --- Stats ---
-  document.getElementById("stat-fixed").textContent = cop(summary.total_fixed);
+  // stat-fixed se actualiza en renderFixedPlans; stat-variable aquí.
   document.getElementById("stat-variable").textContent = cop(summary.total_variable);
-  document.getElementById("tx-count").textContent = `${summary.transaction_count} en total`;
 
-  // --- Movimientos (solo gastos en el listado principal) ---
+  // --- Movimientos (solo gastos variables en columna derecha) ---
   renderTxList(txs, summary);
 }
 
@@ -250,16 +249,24 @@ function renderFixedPlans(plans) {
   const executed = plans.filter((p) => p.is_executed);
   const executedTotal = executed.reduce((s, p) => s + p.amount, 0);
 
-  document.getElementById("fp-total").textContent = cop(total);
+  document.getElementById("stat-fixed").textContent = cop(total);
   document.getElementById("fp-progress").textContent =
-    plans.length ? `${executed.length}/${plans.length} ejecutados · ${cop(executedTotal)} pagado` : "";
+    plans.length ? `${executed.length}/${plans.length} · ${cop(executedTotal)} pagado` : "";
 
   if (!plans.length) {
-    list.innerHTML = `<div class="fp-empty">Sin gastos fijos este mes. Agrégalos abajo o copia del mes anterior.</div>`;
+    list.innerHTML = `<div class="fp-empty">Sin gastos fijos este mes.<br>Agrégalos abajo o copia del mes anterior.</div>`;
     return;
   }
 
-  list.innerHTML = plans.map((p) => `
+  const filterQ = (document.getElementById("filter-fixed")?.value || "").toLowerCase();
+  const visible = filterQ ? plans.filter((p) => p.name.toLowerCase().includes(filterQ)) : plans;
+
+  if (!visible.length) {
+    list.innerHTML = `<div class="fp-empty">Sin resultados para "${escapeHtml(filterQ)}".</div>`;
+    return;
+  }
+
+  list.innerHTML = visible.map((p) => `
     <div class="fp-item ${p.is_executed ? "fp-done" : ""}" data-id="${p.id}">
       <button class="fp-check" data-id="${p.id}" title="${p.is_executed ? "Marcar pendiente" : "Marcar ejecutado"}">
         ${p.is_executed ? "✓" : ""}
@@ -278,7 +285,7 @@ function renderFixedPlans(plans) {
         const plans = await Api.listFixedPlans(state.year, state.month);
         state.fixedPlans = plans;
         renderFixedPlans(plans);
-        loadHome(); // refresca conciliación
+        loadHome();
       } catch (err) { showToast(err.message); }
     });
   });
@@ -316,8 +323,9 @@ function renderFixedPlans(plans) {
   });
 }
 
-document.getElementById("fixed-plans-toggle").addEventListener("click", () => {
-  document.getElementById("fixed-plans-panel").classList.toggle("open");
+// Filtro en tiempo real para gastos fijos
+document.getElementById("filter-fixed").addEventListener("input", () => {
+  renderFixedPlans(state.fixedPlans);
 });
 
 document.getElementById("add-plan-btn").addEventListener("click", async () => {
@@ -343,6 +351,11 @@ document.getElementById("copy-prev-plans-btn").addEventListener("click", async (
     renderFixedPlans(plans);
     showToast("Gastos fijos copiados del mes anterior");
   } catch (err) { showToast(err.message); }
+});
+
+// Filtro de categoría para gastos variables
+document.getElementById("filter-variable-cat").addEventListener("change", () => {
+  renderTxList(state.transactions, state.summary);
 });
 
 function renderPayroll(txs, summary) {
@@ -408,22 +421,35 @@ const TYPE_ICON = { income: "💰", deduction: "📉", fixed: "📌", variable: 
 
 function renderTxList(txs, summary) {
   const txList = document.getElementById("tx-list");
-  // En el listado principal mostramos solo GASTOS (nómina va en su panel).
-  const expenses = txs.filter((t) => t.type === "fixed" || t.type === "variable");
+  const catSel = document.getElementById("filter-variable-cat");
+
+  // Solo gastos variables en esta columna
+  const allVars = txs.filter((t) => t.type === "variable");
+
+  // Poblar el selector de categorías conservando la selección actual
+  const prevCat = catSel.value;
+  const cats = [...new Set(allVars.map((t) => t.category || "Otros"))].sort();
+  catSel.innerHTML = `<option value="">Todas las categorías</option>` +
+    cats.map((c) => `<option value="${escapeHtml(c)}"${c === prevCat ? " selected" : ""}>${escapeHtml(c)}</option>`).join("");
+
+  const activeCat = catSel.value;
+  const expenses = activeCat ? allVars.filter((t) => (t.category || "Otros") === activeCat) : allVars;
+
+  // Actualizar contador
+  document.getElementById("tx-count").textContent = `${expenses.length} movimiento${expenses.length !== 1 ? "s" : ""}`;
 
   if (!expenses.length) {
     txList.innerHTML = `
       <div class="empty-state">
         <span class="ic">🗒️</span>
-        <p><strong>Sin gastos este mes</strong></p>
-        <p>Toca el botón "+" para registrar tu primer gasto.</p>
+        <p><strong>${activeCat ? "Sin gastos en esta categoría" : "Sin gastos variables este mes"}</strong></p>
+        <p>Toca el botón "+" para registrar un gasto.</p>
       </div>`;
     return;
   }
 
-  // Saldo corrido: arranca en saldo inicial + neto, y va bajando con cada gasto
-  // (ordenado de más reciente a más antiguo para mostrar el saldo después de cada uno).
-  const startBalance = (summary.opening_balance || 0) + (summary.net_income || 0);
+  // Saldo corrido desde: saldo anterior + nómina neta - total fijos pagados
+  const startBalance = (summary.opening_balance || 0) + (summary.net_income || 0) - (summary.total_fixed || 0);
   const chrono = [...expenses].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   const runningMap = {};
   let running = startBalance;
@@ -433,18 +459,18 @@ function renderTxList(txs, summary) {
   expenses.forEach((t) => { (groups[t.date] = groups[t.date] || []).push(t); });
   const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
-  txList.innerHTML = dates.map((date) => `
+  txList.innerHTML = dates.map((d) => `
     <div class="tx-group">
-      <div class="tx-date-label">${dateLabel(date)}</div>
-      ${groups[date].sort((a,b)=>b.id-a.id).map((t) => `
+      <div class="tx-date-label">${dateLabel(d)}</div>
+      ${groups[d].sort((a, b) => b.id - a.id).map((t) => `
         <div class="tx-row type-${t.type}" data-id="${t.id}">
           <div class="tx-icon">${TYPE_ICON[t.type]}</div>
           <div class="tx-info">
             <div class="tx-desc">${escapeHtml(t.description)}</div>
-            <div class="tx-meta">${t.type === "fixed" ? "Gasto fijo" : escapeHtml(t.category || "Otros")}</div>
+            <div class="tx-meta">${escapeHtml(t.category || "Otros")}</div>
             <div class="tx-running">Saldo: ${cop(runningMap[t.id])}</div>
           </div>
-          <div class="tx-amount tabular">${t.amount < 0 ? "+" : "−"}${cop(Math.abs(t.amount))}</div>
+          <div class="tx-amount tabular">−${cop(t.amount)}</div>
         </div>
       `).join("")}
     </div>
