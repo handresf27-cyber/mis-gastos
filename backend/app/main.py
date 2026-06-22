@@ -33,6 +33,6 @@ def health():
 
 # Sirve el frontend (PWA) como archivos estáticos.
 # La carpeta "frontend" vive un nivel arriba de "backend" en el repo.
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
