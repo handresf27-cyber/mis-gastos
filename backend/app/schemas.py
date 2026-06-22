@@ -118,6 +118,33 @@ class MonthTrendPoint(BaseModel):
     balance: float
 
 
+# ---------- Fixed Expense Plans ----------
+
+class FixedPlanCreate(BaseModel):
+    name: str
+    amount: float
+    month: int
+    year: int
+
+
+class FixedPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[float] = None
+
+
+class FixedPlanOut(BaseModel):
+    id: int
+    name: str
+    amount: float
+    month: int
+    year: int
+    is_executed: bool
+    transaction_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
 # ---------- Categories ----------
 
 class CategoryCreate(BaseModel):

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, date
 from sqlalchemy import (
-    Column, Integer, String, Float, Date, DateTime, ForeignKey, Enum
+    Column, Integer, String, Float, Date, DateTime, ForeignKey, Enum, Boolean
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -31,6 +31,9 @@ class User(Base):
     )
     statements = relationship(
         "MonthlyStatement", back_populates="owner", cascade="all, delete-orphan"
+    )
+    fixed_plans = relationship(
+        "FixedExpensePlan", back_populates="owner", cascade="all, delete-orphan"
     )
 
 
@@ -67,6 +70,25 @@ class Transaction(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="transactions")
+
+
+class FixedExpensePlan(Base):
+    """Checklist de gastos fijos planificados para un mes."""
+    __tablename__ = "fixed_expense_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    is_executed = Column(Boolean, default=False, nullable=False)
+    # Cuando se marca ejecutado, se crea una Transaction y se guarda su id aquí.
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="fixed_plans")
+    transaction = relationship("Transaction", foreign_keys=[transaction_id])
 
 
 class MonthlyStatement(Base):

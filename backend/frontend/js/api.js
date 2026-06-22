@@ -87,6 +87,25 @@ const Api = {
     return this.request(`/api/statement/previous-closing?year=${year}&month=${month}`);
   },
 
+  listFixedPlans(year, month) {
+    return this.request(`/api/fixed-plans?year=${year}&month=${month}`);
+  },
+  createFixedPlan(body) {
+    return this.request("/api/fixed-plans", { method: "POST", body });
+  },
+  updateFixedPlan(id, body) {
+    return this.request(`/api/fixed-plans/${id}`, { method: "PATCH", body });
+  },
+  toggleFixedPlan(id) {
+    return this.request(`/api/fixed-plans/${id}/toggle`, { method: "PATCH" });
+  },
+  deleteFixedPlan(id) {
+    return this.request(`/api/fixed-plans/${id}`, { method: "DELETE" });
+  },
+  copyPreviousPlans(year, month) {
+    return this.request(`/api/fixed-plans/copy-previous?year=${year}&month=${month}`, { method: "POST" });
+  },
+
   listCategories() {
     return this.request("/api/categories");
   },

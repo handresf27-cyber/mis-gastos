@@ -6,6 +6,7 @@ const state = {
   months: [],          // [{year, month}] disponibles + mes actual
   transactions: [],
   categories: [],
+  fixedPlans: [],
   editingTxId: null,
   activeView: "home",
   charts: {},
@@ -159,10 +160,12 @@ async function loadHome() {
   const txList = document.getElementById("tx-list");
   txList.innerHTML = `<div class="loader">Cargando...</div>`;
 
-  const [summary, txs] = await Promise.all([
+  const [summary, txs, plans] = await Promise.all([
     Api.summary(state.year, state.month),
     Api.listTransactions(state.year, state.month),
+    Api.listFixedPlans(state.year, state.month),
   ]);
+  state.fixedPlans = plans;
   state.transactions = txs;
   state.summary = summary;
 
@@ -209,6 +212,9 @@ async function loadHome() {
   // --- Nómina ---
   renderPayroll(txs, summary);
 
+  // --- Gastos fijos planificados ---
+  renderFixedPlans(plans);
+
   // --- Stats ---
   document.getElementById("stat-fixed").textContent = cop(summary.total_fixed);
   document.getElementById("stat-variable").textContent = cop(summary.total_variable);
@@ -217,6 +223,108 @@ async function loadHome() {
   // --- Movimientos (solo gastos en el listado principal) ---
   renderTxList(txs, summary);
 }
+
+// ============ GASTOS FIJOS PLANIFICADOS ============
+function renderFixedPlans(plans) {
+  const list = document.getElementById("fixed-plans-list");
+  const total = plans.reduce((s, p) => s + p.amount, 0);
+  const executed = plans.filter((p) => p.is_executed);
+  const executedTotal = executed.reduce((s, p) => s + p.amount, 0);
+
+  document.getElementById("fp-total").textContent = cop(total);
+  document.getElementById("fp-progress").textContent =
+    plans.length ? `${executed.length}/${plans.length} ejecutados · ${cop(executedTotal)} pagado` : "";
+
+  if (!plans.length) {
+    list.innerHTML = `<div class="fp-empty">Sin gastos fijos este mes. Agrégalos abajo o copia del mes anterior.</div>`;
+    return;
+  }
+
+  list.innerHTML = plans.map((p) => `
+    <div class="fp-item ${p.is_executed ? "fp-done" : ""}" data-id="${p.id}">
+      <button class="fp-check" data-id="${p.id}" title="${p.is_executed ? "Marcar pendiente" : "Marcar ejecutado"}">
+        ${p.is_executed ? "✓" : ""}
+      </button>
+      <span class="fp-name">${escapeHtml(p.name)}</span>
+      <span class="fp-amount tabular">${cop(p.amount)}</span>
+      <button class="fp-edit" data-id="${p.id}" title="Editar">✎</button>
+      <button class="fp-del" data-id="${p.id}" title="Eliminar">✕</button>
+    </div>
+  `).join("");
+
+  list.querySelectorAll(".fp-check").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await Api.toggleFixedPlan(parseInt(btn.dataset.id));
+        const plans = await Api.listFixedPlans(state.year, state.month);
+        state.fixedPlans = plans;
+        renderFixedPlans(plans);
+        loadHome(); // refresca conciliación
+      } catch (err) { showToast(err.message); }
+    });
+  });
+
+  list.querySelectorAll(".fp-del").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("¿Eliminar este gasto fijo?")) return;
+      try {
+        await Api.deleteFixedPlan(parseInt(btn.dataset.id));
+        const plans = await Api.listFixedPlans(state.year, state.month);
+        state.fixedPlans = plans;
+        renderFixedPlans(plans);
+        loadHome();
+      } catch (err) { showToast(err.message); }
+    });
+  });
+
+  list.querySelectorAll(".fp-edit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const plan = state.fixedPlans.find((p) => p.id === parseInt(btn.dataset.id));
+      if (!plan) return;
+      const newName = prompt("Nombre:", plan.name);
+      if (newName === null) return;
+      const newAmt = prompt("Valor (COP):", Math.round(plan.amount));
+      if (newAmt === null) return;
+      Api.updateFixedPlan(plan.id, { name: newName.trim() || plan.name, amount: parseFloat(newAmt) || plan.amount })
+        .then(async () => {
+          const plans = await Api.listFixedPlans(state.year, state.month);
+          state.fixedPlans = plans;
+          renderFixedPlans(plans);
+          if (plan.is_executed) loadHome();
+        })
+        .catch((err) => showToast(err.message));
+    });
+  });
+}
+
+document.getElementById("fixed-plans-toggle").addEventListener("click", () => {
+  document.getElementById("fixed-plans-panel").classList.toggle("open");
+});
+
+document.getElementById("add-plan-btn").addEventListener("click", async () => {
+  const nameEl = document.getElementById("new-plan-name");
+  const amtEl = document.getElementById("new-plan-amount");
+  const name = nameEl.value.trim();
+  const amount = parseFloat(amtEl.value);
+  if (!name || !amount || amount <= 0) { showToast("Escribe nombre y valor"); return; }
+  try {
+    await Api.createFixedPlan({ name, amount, month: state.month, year: state.year });
+    nameEl.value = ""; amtEl.value = "";
+    const plans = await Api.listFixedPlans(state.year, state.month);
+    state.fixedPlans = plans;
+    renderFixedPlans(plans);
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("copy-prev-plans-btn").addEventListener("click", async () => {
+  try {
+    await Api.copyPreviousPlans(state.year, state.month);
+    const plans = await Api.listFixedPlans(state.year, state.month);
+    state.fixedPlans = plans;
+    renderFixedPlans(plans);
+    showToast("Gastos fijos copiados del mes anterior");
+  } catch (err) { showToast(err.message); }
+});
 
 function renderPayroll(txs, summary) {
   const incomes = txs.filter((t) => t.type === "income");

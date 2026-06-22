@@ -161,6 +161,27 @@
             </div>
           </div>
 
+          <!-- Panel de gastos fijos planificados -->
+          <div class="panel" id="fixed-plans-panel">
+            <button class="panel-head" id="fixed-plans-toggle">
+              <span>Gastos fijos del mes</span>
+              <span class="panel-net tabular" id="fp-total">$0</span>
+              <span class="panel-chevron" id="fixed-plans-chevron">▾</span>
+            </button>
+            <div class="panel-body" id="fixed-plans-body">
+              <div id="fixed-plans-list"></div>
+              <div class="fp-add-row">
+                <input type="text" id="new-plan-name" placeholder="Ej. Arriendo, Internet..." />
+                <input type="number" id="new-plan-amount" placeholder="Valor" step="1" min="0" />
+                <button class="btn btn-ghost" id="add-plan-btn">Agregar</button>
+              </div>
+              <div class="fp-footer">
+                <button class="btn-text" id="copy-prev-plans-btn">↩ Copiar del mes anterior</button>
+                <span class="fp-progress" id="fp-progress"></span>
+              </div>
+            </div>
+          </div>
+
           <div class="stat-grid">
             <div class="stat-chip fixed">
               <div class="stat-label">Gastos fijos</div>
