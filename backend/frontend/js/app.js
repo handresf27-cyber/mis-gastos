@@ -111,46 +111,64 @@ document.querySelectorAll(".nav-item[data-view], .bottom-nav button[data-view]")
   b.addEventListener("click", () => switchView(b.dataset.view));
 });
 
-// ============ Selector de mes ============
-function monthLabel(year, month) {
-  const txt = MONTH_NAMES[month - 1].slice(0, 3);
-  return `${txt} ${String(year).slice(2)}`;
+// ============ Navegación de meses (año + grid de 12 meses) ============
+const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+async function initMonthNav() {
+  let available = [];
+  try { available = await Api.availableMonths(); } catch (_) {}
+  state.availableMonthSet = new Set(available.map((m) => `${m.year}-${m.month}`));
+  if (!state.navYear) state.navYear = new Date().getFullYear();
+  renderMonthGrid();
 }
 
-async function buildMonthScroller() {
-  let available = [];
-  try { available = await Api.availableMonths(); } catch (_) { /* nuevo usuario, sin datos aun */ }
-
-  const now = new Date();
-  const set = new Map();
-  // Asegura que el mes actual y los 2 siguientes (para planear) esten disponibles
-  for (let i = -1; i <= 2; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
-    set.set(key, { year: d.getFullYear(), month: d.getMonth() + 1 });
-  }
-  available.forEach((m) => set.set(`${m.year}-${m.month}`, m));
-
-  state.months = Array.from(set.values()).sort((a, b) => (b.year - a.year) || (b.month - a.month));
-
-  const scroller = document.getElementById("month-scroller");
-  scroller.innerHTML = "";
-  state.months.forEach((m) => {
-    const pill = document.createElement("button");
-    pill.className = "month-pill" + (m.year === state.year && m.month === state.month ? " active" : "");
-    pill.textContent = monthLabel(m.year, m.month);
+function renderMonthGrid() {
+  document.getElementById("nav-year-label").textContent = state.navYear;
+  const grid = document.getElementById("month-grid");
+  grid.innerHTML = MONTH_SHORT.map((name, i) => {
+    const m = i + 1;
+    const hasData = state.availableMonthSet && state.availableMonthSet.has(`${state.navYear}-${m}`);
+    const isActive = state.year === state.navYear && state.month === m;
+    return `<button class="month-pill${isActive ? " active" : ""}${!hasData ? " empty" : ""}"
+      data-year="${state.navYear}" data-month="${m}">${name}</button>`;
+  }).join("");
+  grid.querySelectorAll(".month-pill").forEach((pill) => {
     pill.addEventListener("click", () => {
-      state.year = m.year; state.month = m.month;
-      document.querySelectorAll(".month-pill").forEach((p) => p.classList.remove("active"));
-      pill.classList.add("active");
+      state.year = parseInt(pill.dataset.year);
+      state.month = parseInt(pill.dataset.month);
+      renderMonthGrid();
       refreshCurrentView();
     });
-    scroller.appendChild(pill);
   });
 }
 
+document.getElementById("year-prev").addEventListener("click", () => {
+  state.navYear = (state.navYear || new Date().getFullYear()) - 1;
+  renderMonthGrid();
+});
+document.getElementById("year-next").addEventListener("click", () => {
+  const max = new Date().getFullYear() + 1;
+  if ((state.navYear || new Date().getFullYear()) < max) {
+    state.navYear = (state.navYear || new Date().getFullYear()) + 1;
+    renderMonthGrid();
+  }
+});
+
+// ============ Tabs de gastos (fijos / variables) ============
+function setExpenseTab(tab) {
+  const same = state.activeExpenseTab === tab;
+  state.activeExpenseTab = same ? null : tab;
+  document.getElementById("tab-fixed").classList.toggle("active", state.activeExpenseTab === "fixed");
+  document.getElementById("tab-variable").classList.toggle("active", state.activeExpenseTab === "variable");
+  document.getElementById("panel-fixed").style.display = state.activeExpenseTab === "fixed" ? "block" : "none";
+  document.getElementById("panel-variable").style.display = state.activeExpenseTab === "variable" ? "block" : "none";
+}
+document.getElementById("tab-fixed").addEventListener("click", () => setExpenseTab("fixed"));
+document.getElementById("tab-variable").addEventListener("click", () => setExpenseTab("variable"));
+
 function refreshCurrentView() {
   document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
+  renderMonthGrid();
   if (state.activeView === "home") loadHome();
   else if (state.activeView === "metrics") loadMetrics();
 }
@@ -681,7 +699,7 @@ formTx.addEventListener("submit", async (e) => {
     else await Api.createTransaction(payload);
     closeTxModal();
     showToast("Movimiento guardado");
-    await buildMonthScroller();
+    await initMonthNav();
     refreshCurrentView();
   } catch (err) { showToast(err.message); }
 });
@@ -693,7 +711,7 @@ document.getElementById("modal-delete").addEventListener("click", async () => {
     await Api.deleteTransaction(state.editingTxId);
     closeTxModal();
     showToast("Movimiento eliminado");
-    await buildMonthScroller();
+    await initMonthNav();
     refreshCurrentView();
   } catch (err) { showToast(err.message); }
 });
@@ -758,8 +776,9 @@ document.getElementById("balance-save").addEventListener("click", async () => {
 
 async function bootstrapApp() {
   state.categories = await Api.listCategories().catch(() => []);
-  await buildMonthScroller();
+  await initMonthNav();
   document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
+  setExpenseTab("variable"); // abrir gastos variables por defecto
   switchView("home");
 }
 
