@@ -268,20 +268,25 @@ function renderFixedPlans(plans) {
   document.getElementById("fp-progress").textContent =
     plans.length ? `${executed.length}/${plans.length} ejecutados` : "";
 
-  if (!plans.length) {
-    list.innerHTML = `<div class="fp-empty">Sin gastos fijos este mes.<br>Agrégalos abajo o copia del mes anterior.</div>`;
-    return;
-  }
-
   const filterQ = (document.getElementById("filter-fixed")?.value || "").toLowerCase();
-  const visible = filterQ ? plans.filter((p) => p.name.toLowerCase().includes(filterQ)) : plans;
 
-  if (!visible.length) {
-    list.innerHTML = `<div class="fp-empty">Sin resultados para "${escapeHtml(filterQ)}".</div>`;
+  // Transacciones fijas reales (importadas o manuales, no del checklist)
+  const fixedTxs = (state.transactions || []).filter(
+    (t) => t.type === "fixed" && t.notes !== "[plan-fijo]"
+  );
+
+  const visiblePlans = filterQ ? plans.filter((p) => p.name.toLowerCase().includes(filterQ)) : plans;
+  const visibleTxs = filterQ ? fixedTxs.filter((t) => t.description.toLowerCase().includes(filterQ)) : fixedTxs;
+
+  if (!visiblePlans.length && !visibleTxs.length) {
+    list.innerHTML = filterQ
+      ? `<div class="fp-empty">Sin resultados para "${escapeHtml(filterQ)}".</div>`
+      : `<div class="fp-empty">Sin gastos fijos este mes.<br>Agrégalos abajo o copia del mes anterior.</div>`;
     return;
   }
 
-  list.innerHTML = visible.map((p) => `
+  // Checklist de planes (con checkboxes)
+  let html = visiblePlans.map((p) => `
     <div class="fp-item ${p.is_executed ? "fp-done" : ""}" data-id="${p.id}">
       <button class="fp-check" data-id="${p.id}" title="${p.is_executed ? "Marcar pendiente" : "Marcar ejecutado"}">
         ${p.is_executed ? "✓" : ""}
@@ -292,6 +297,30 @@ function renderFixedPlans(plans) {
       <button class="fp-del" data-id="${p.id}" title="Eliminar">✕</button>
     </div>
   `).join("");
+
+  // Transacciones fijas (grupos por fecha, clicables para editar)
+  if (visibleTxs.length) {
+    const groups = {};
+    visibleTxs.forEach((t) => { (groups[t.date] = groups[t.date] || []).push(t); });
+    const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    html += dates.map((d) => `
+      <div class="tx-group">
+        <div class="tx-date-label">${dateLabel(d)}</div>
+        ${groups[d].sort((a, b) => b.id - a.id).map((t) => `
+          <div class="tx-row type-fixed" data-txid="${t.id}">
+            <div class="tx-icon">📌</div>
+            <div class="tx-info">
+              <div class="tx-desc">${escapeHtml(t.description)}</div>
+              <div class="tx-meta">${escapeHtml(t.category || "Gasto fijo")}</div>
+            </div>
+            <div class="tx-amount tabular" style="color:var(--fixed-color)">−${cop(t.amount)}</div>
+          </div>
+        `).join("")}
+      </div>
+    `).join("");
+  }
+
+  list.innerHTML = html;
 
   list.querySelectorAll(".fp-check").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -335,6 +364,11 @@ function renderFixedPlans(plans) {
         })
         .catch((err) => showToast(err.message));
     });
+  });
+
+  // Transacciones fijas: clic abre modal de edición
+  list.querySelectorAll("[data-txid]").forEach((row) => {
+    row.addEventListener("click", () => openTxModal(parseInt(row.dataset.txid)));
   });
 }
 
