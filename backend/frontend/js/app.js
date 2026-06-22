@@ -685,8 +685,8 @@ function openBalanceModal(mode) {
   balanceMode = mode;
   const s = state.summary || {};
   if (mode === "opening") {
-    document.getElementById("balance-modal-title").textContent = "Saldo inicial del mes";
-    document.getElementById("balance-hint").textContent = "¿Cuánto tenías en la cuenta al empezar el mes? Normalmente es el saldo con el que cerraste el mes anterior.";
+    document.getElementById("balance-modal-title").textContent = "Saldo anterior en cuenta";
+    document.getElementById("balance-hint").textContent = "¿Cuánto tenías en la cuenta al empezar este mes? Normalmente es el saldo con el que cerraste el mes anterior.";
     document.getElementById("balance-label").textContent = "Saldo inicial (COP)";
     document.getElementById("balance-input").value = s.opening_balance || "";
     document.getElementById("use-prev-btn").style.display = "block";
