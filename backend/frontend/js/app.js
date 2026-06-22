@@ -247,13 +247,13 @@ async function loadHome() {
   }
 
   // --- Nómina ---
-  renderPayroll(txs, summary);
+  renderPayroll(txs);
 
   // --- Gastos fijos planificados ---
   renderFixedPlans(plans);
 
   // --- Stats ---
-  // stat-fixed se actualiza en renderFixedPlans; stat-variable aquí.
+  document.getElementById("stat-fixed").textContent = cop(summary.total_fixed);
   document.getElementById("stat-variable").textContent = cop(summary.total_variable);
 
   // --- Movimientos (solo gastos variables en columna derecha) ---
@@ -263,13 +263,10 @@ async function loadHome() {
 // ============ GASTOS FIJOS PLANIFICADOS ============
 function renderFixedPlans(plans) {
   const list = document.getElementById("fixed-plans-list");
-  const total = plans.reduce((s, p) => s + p.amount, 0);
   const executed = plans.filter((p) => p.is_executed);
-  const executedTotal = executed.reduce((s, p) => s + p.amount, 0);
 
-  document.getElementById("stat-fixed").textContent = cop(total);
   document.getElementById("fp-progress").textContent =
-    plans.length ? `${executed.length}/${plans.length} · ${cop(executedTotal)} pagado` : "";
+    plans.length ? `${executed.length}/${plans.length} ejecutados` : "";
 
   if (!plans.length) {
     list.innerHTML = `<div class="fp-empty">Sin gastos fijos este mes.<br>Agrégalos abajo o copia del mes anterior.</div>`;
@@ -376,9 +373,8 @@ document.getElementById("filter-variable-cat").addEventListener("change", () => 
   renderTxList(state.transactions, state.summary);
 });
 
-function renderPayroll(txs, summary) {
+function renderPayroll(txs) {
   const salaryIncomes = txs.filter((t) => t.type === "income" && t.category === "Ingreso");
-  const extraIncomes = txs.filter((t) => t.type === "income" && t.category !== "Ingreso");
   const deductions = txs.filter((t) => t.type === "deduction");
 
   const line = (t) => `
@@ -391,40 +387,22 @@ function renderPayroll(txs, summary) {
 
   document.getElementById("income-list").innerHTML =
     salaryIncomes.length ? salaryIncomes.map(line).join("") : empty("Sin ingresos de nómina");
-  document.getElementById("extra-income-list").innerHTML =
-    extraIncomes.length ? extraIncomes.map(line).join("") : empty("—");
   document.getElementById("deduction-list").innerHTML =
     deductions.length ? deductions.map(line).join("") : empty("Sin deducciones registradas");
 
-  document.getElementById("ps-income").textContent = cop(summary.total_income);
-  document.getElementById("ps-deduction").textContent = cop(summary.total_deduction);
-  document.getElementById("ps-net").textContent = cop(summary.net_income);
-  document.getElementById("payroll-net").textContent = cop(summary.net_income);
+  const salaryTotal = salaryIncomes.reduce((s, t) => s + t.amount, 0);
+  const deductionTotal = deductions.reduce((s, t) => s + t.amount, 0);
+  const salaryNet = salaryTotal - deductionTotal;
+  document.getElementById("ps-income").textContent = cop(salaryTotal);
+  document.getElementById("ps-deduction").textContent = cop(deductionTotal);
+  document.getElementById("ps-net").textContent = cop(salaryNet);
+  document.getElementById("payroll-net").textContent = cop(salaryNet);
 
   document.querySelectorAll(".payroll-line").forEach((row) => {
     row.addEventListener("click", () => openTxModal(parseInt(row.dataset.id)));
   });
 }
 
-document.getElementById("add-extra-income-btn").addEventListener("click", async () => {
-  const descEl = document.getElementById("extra-income-desc");
-  const amtEl = document.getElementById("extra-income-amount");
-  const desc = descEl.value.trim();
-  const amount = parseFloat(amtEl.value);
-  if (!desc || !amount || amount <= 0) { showToast("Escribe descripción y valor"); return; }
-  try {
-    await Api.createTransaction({
-      description: desc,
-      amount,
-      type: "income",
-      category: "Otros ingresos",
-      date: `${state.year}-${String(state.month).padStart(2, "0")}-01`,
-    });
-    descEl.value = ""; amtEl.value = "";
-    showToast("Ingreso adicional agregado");
-    loadHome();
-  } catch (err) { showToast(err.message); }
-});
 
 function dateLabel(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
