@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Mis Gastos</title>
+<meta name="theme-color" content="#10141b" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Mis Gastos" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ======= AUTH VIEW ======= -->
+  <section id="view-auth" class="view-auth">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="coin">$</div>
+        <h1>Mis Gastos</h1>
+      </div>
+      <p class="auth-sub" id="auth-sub">Tu control financiero personal, en cualquier dispositivo.</p>
+
+      <div id="auth-error" class="auth-error hidden"></div>
+
+      <form id="form-login">
+        <div class="field">
+          <label>Correo</label>
+          <input type="email" id="login-email" required autocomplete="email" placeholder="tu@correo.com" />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary">Entrar</button>
+      </form>
+
+      <form id="form-register" class="hidden">
+        <div class="field">
+          <label>Nombre</label>
+          <input type="text" id="reg-name" placeholder="Camilo" />
+        </div>
+        <div class="field">
+          <label>Correo</label>
+          <input type="email" id="reg-email" required autocomplete="email" placeholder="tu@correo.com" />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" id="reg-password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres" />
+        </div>
+        <button type="submit" class="btn btn-primary">Crear cuenta</button>
+      </form>
+
+      <div class="auth-toggle">
+        <span id="auth-toggle-text">¿No tienes cuenta?</span>
+        <button class="btn-text" id="auth-toggle-btn">Crear una</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= APP SHELL ======= -->
+  <div id="shell" class="shell hidden">
+
+    <!-- Sidebar (desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="coin">$</div>
+        <strong>Mis Gastos</strong>
+      </div>
+      <button class="nav-item active" data-view="home"><span class="ic">🏠</span> Inicio</button>
+      <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Métricas</button>
+      <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
+      <div class="sidebar-footer">
+        <div class="sidebar-user" id="sidebar-user"></div>
+        <button class="nav-item" id="logout-btn-desktop"><span class="ic">⎋</span> Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div class="topbar-title" id="topbar-title">
+          Inicio
+          <span class="sub" id="topbar-sub"></span>
+        </div>
+        <button class="logout-btn" id="logout-btn-mobile">Salir</button>
+      </header>
+
+      <div class="month-scroller" id="month-scroller"></div>
+
+      <main class="content">
+
+        <!-- HOME / CONCILIACIÓN -->
+        <section id="view-home" class="view">
+
+          <!-- Panel de conciliación bancaria (hero) -->
+          <div class="recon-card">
+            <div class="recon-top">
+              <div>
+                <div class="recon-label">Saldo en la cuenta</div>
+                <div class="recon-balance tabular" id="recon-computed">$0</div>
+                <div class="recon-sub" id="recon-sub">lo que debería quedarte este mes</div>
+              </div>
+              <div class="recon-status" id="recon-status"></div>
+            </div>
+
+            <div class="recon-flow">
+              <div class="flow-row editable" id="row-opening">
+                <span class="flow-name">Saldo inicial del mes</span>
+                <span class="flow-val tabular" id="val-opening">$0</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-name">+ Ingresos netos (nómina)</span>
+                <span class="flow-val tabular positive" id="val-net">$0</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-name">− Gastos del mes</span>
+                <span class="flow-val tabular negative" id="val-expenses">$0</span>
+              </div>
+              <div class="flow-row total">
+                <span class="flow-name">= Saldo calculado</span>
+                <span class="flow-val tabular" id="val-computed">$0</span>
+              </div>
+            </div>
+
+            <div class="recon-bank">
+              <div class="recon-bank-head">
+                <span>Saldo real en tu banco</span>
+                <button class="btn-text" id="edit-actual-btn">Ingresar / editar</button>
+              </div>
+              <div class="recon-bank-val tabular" id="val-actual">— sin ingresar —</div>
+              <div class="recon-diff" id="recon-diff"></div>
+            </div>
+          </div>
+
+          <!-- Resumen de nómina (colapsable) -->
+          <div class="panel">
+            <button class="panel-head" id="payroll-toggle">
+              <span>Nómina del mes</span>
+              <span class="panel-net tabular" id="payroll-net">$0</span>
+              <span class="panel-chevron" id="payroll-chevron">▾</span>
+            </button>
+            <div class="panel-body" id="payroll-body">
+              <div class="payroll-col">
+                <div class="payroll-col-title positive">Ingresos</div>
+                <div id="income-list"></div>
+                <div class="payroll-col-title negative" style="margin-top:14px;">Deducciones</div>
+                <div id="deduction-list"></div>
+              </div>
+              <div class="payroll-summary">
+                <div class="ps-row"><span>Total ingresos</span><span class="tabular" id="ps-income">$0</span></div>
+                <div class="ps-row"><span>Total deducciones</span><span class="tabular" id="ps-deduction">$0</span></div>
+                <div class="ps-row net"><span>Neto a la cuenta</span><span class="tabular" id="ps-net">$0</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-chip fixed">
+              <div class="stat-label">Gastos fijos</div>
+              <div class="stat-value tabular" id="stat-fixed">$0</div>
+            </div>
+            <div class="stat-chip variable">
+              <div class="stat-label">Gastos variables</div>
+              <div class="stat-value tabular" id="stat-variable">$0</div>
+            </div>
+          </div>
+
+          <div class="section-head">
+            <h2>Movimientos</h2>
+            <span class="count" id="tx-count">0</span>
+          </div>
+
+          <div id="tx-list"></div>
+        </section>
+
+        <!-- METRICS -->
+        <section id="view-metrics" class="view hidden">
+          <div class="metrics-grid">
+            <div class="chart-card">
+              <h3>Gastos variables por categoría</h3>
+              <div class="chart-wrap"><canvas id="chart-categories"></canvas></div>
+              <div class="cat-legend" id="cat-legend"></div>
+            </div>
+            <div class="chart-card">
+              <h3>Ingresos vs. gastos del mes</h3>
+              <div class="chart-wrap"><canvas id="chart-month"></canvas></div>
+            </div>
+            <div class="chart-card full">
+              <h3>Tendencia del año</h3>
+              <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CATEGORIES -->
+        <section id="view-categories" class="view hidden">
+          <div class="section-head"><h2>Tus categorías</h2></div>
+          <div id="cat-list"></div>
+          <div class="add-cat-row">
+            <input type="text" id="new-cat-name" placeholder="Nueva categoría (ej. Mascotas)" />
+            <button class="btn btn-ghost" id="add-cat-btn">Agregar</button>
+          </div>
+        </section>
+
+      </main>
+
+      <button class="fab" id="fab-add">+</button>
+
+      <nav class="bottom-nav">
+        <button class="active" data-view="home"><span class="ic">🏠</span>Inicio</button>
+        <button data-view="metrics"><span class="ic">📊</span>Métricas</button>
+        <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: agregar/editar movimiento ======= -->
+  <div id="modal-tx" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modal-title">Nuevo movimiento</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+
+      <div class="type-toggle" id="type-toggle">
+        <button data-type="variable" class="active">Variable</button>
+        <button data-type="fixed">Fijo</button>
+        <button data-type="income">Ingreso</button>
+        <button data-type="deduction">Deducción</button>
+      </div>
+
+      <form id="form-tx">
+        <div class="field">
+          <label>Descripción</label>
+          <input type="text" id="tx-desc" required placeholder="Ej. Almuerzo, Mercado, Sueldo..." />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Valor (COP)</label>
+            <input type="number" id="tx-amount" required step="1" placeholder="0" />
+          </div>
+          <div class="field">
+            <label>Fecha</label>
+            <input type="date" id="tx-date" required />
+          </div>
+        </div>
+        <div class="field" id="cat-field">
+          <label>Categoría</label>
+          <select id="tx-category"></select>
+        </div>
+        <div class="field">
+          <label>Notas (opcional)</label>
+          <input type="text" id="tx-notes" placeholder="Algún detalle adicional..." />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="modal-save">Guardar</button>
+        </div>
+        <button type="button" class="btn-danger-text hidden" id="modal-delete">Eliminar movimiento</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ======= MODAL: editar saldos (conciliación) ======= -->
+  <div id="modal-balance" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="balance-modal-title">Saldo</h3>
+        <button class="modal-close" id="balance-close">&times;</button>
+      </div>
+      <p class="modal-hint" id="balance-hint"></p>
+      <div class="field">
+        <label id="balance-label">Valor (COP)</label>
+        <input type="number" id="balance-input" step="1" placeholder="0" />
+      </div>
+      <button class="btn-text" id="use-prev-btn" style="margin-bottom:8px; display:none;">Usar saldo final del mes anterior</button>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="balance-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="balance-save">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/vendor/chart.umd.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
