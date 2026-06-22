@@ -441,8 +441,11 @@ function renderTxList(txs, summary) {
   const txList = document.getElementById("tx-list");
   const catSel = document.getElementById("filter-variable-cat");
 
-  // Solo gastos variables en esta columna
-  const allVars = txs.filter((t) => t.type === "variable");
+  // Gastos variables + ingresos extra (no salario) en esta columna
+  const allVars = txs.filter((t) =>
+    t.type === "variable" ||
+    (t.type === "income" && t.category !== "Ingreso")
+  );
 
   // Poblar el selector de categorías conservando la selección actual
   const prevCat = catSel.value;
@@ -453,25 +456,29 @@ function renderTxList(txs, summary) {
   const activeCat = catSel.value;
   const expenses = activeCat ? allVars.filter((t) => (t.category || "Otros") === activeCat) : allVars;
 
-  // Actualizar contador
   document.getElementById("tx-count").textContent = `${expenses.length} movimiento${expenses.length !== 1 ? "s" : ""}`;
 
   if (!expenses.length) {
     txList.innerHTML = `
       <div class="empty-state">
         <span class="ic">🗒️</span>
-        <p><strong>${activeCat ? "Sin gastos en esta categoría" : "Sin gastos variables este mes"}</strong></p>
-        <p>Toca el botón "+" para registrar un gasto.</p>
+        <p><strong>${activeCat ? "Sin movimientos en esta categoría" : "Sin movimientos este mes"}</strong></p>
+        <p>Toca "+" para registrar un gasto o ingreso extra.</p>
       </div>`;
     return;
   }
 
-  // Saldo corrido desde: saldo anterior + nómina neta - total fijos pagados
-  const startBalance = (summary.opening_balance || 0) + (summary.net_income || 0) - (summary.total_fixed || 0);
+  // Saldo corrido: parte de (saldo anterior + nómina neta - fijos pagados - ingresos extra ya en net_income)
+  // los ingresos extra se suman cronológicamente para no duplicar
+  const extraIncomePre = txs.filter((t) => t.type === "income" && t.category !== "Ingreso").reduce((s, t) => s + t.amount, 0);
+  const startBalance = (summary.opening_balance || 0) + (summary.net_income || 0) - (summary.total_fixed || 0) - extraIncomePre;
   const chrono = [...expenses].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   const runningMap = {};
   let running = startBalance;
-  chrono.forEach((t) => { running -= t.amount; runningMap[t.id] = running; });
+  chrono.forEach((t) => {
+    running = t.type === "income" ? running + t.amount : running - t.amount;
+    runningMap[t.id] = running;
+  });
 
   const groups = {};
   expenses.forEach((t) => { (groups[t.date] = groups[t.date] || []).push(t); });
@@ -488,7 +495,9 @@ function renderTxList(txs, summary) {
             <div class="tx-meta">${escapeHtml(t.category || "Otros")}</div>
             <div class="tx-running">Saldo: ${cop(runningMap[t.id])}</div>
           </div>
-          <div class="tx-amount tabular">−${cop(t.amount)}</div>
+          <div class="tx-amount tabular${t.type === "income" ? " positive" : ""}">
+            ${t.type === "income" ? "+" : "−"}${cop(t.amount)}
+          </div>
         </div>
       `).join("")}
     </div>
@@ -644,6 +653,12 @@ function openTxModal(txId = null) {
   document.getElementById("modal-title").textContent = tx ? "Editar movimiento" : "Nuevo movimiento";
   document.getElementById("modal-delete").classList.toggle("hidden", !tx);
 
+  // Mostrar botones ocultos (fijo/deducción) solo al editar esos tipos
+  ["fixed", "deduction"].forEach((t) => {
+    const btn = document.querySelector(`#type-toggle button[data-type="${t}"]`);
+    if (btn) btn.style.display = (tx?.type === t) ? "" : "none";
+  });
+
   setTxType(tx ? tx.type : "variable");
   document.getElementById("tx-desc").value = tx ? tx.description : "";
   document.getElementById("tx-amount").value = tx ? Math.abs(tx.amount) : "";
@@ -662,7 +677,7 @@ function closeTxModal() {
 
 function setTxType(type) {
   document.querySelectorAll("#type-toggle button").forEach((b) => b.classList.toggle("active", b.dataset.type === type));
-  // La categoría solo aplica a gastos variables.
+  // La categoría solo aplica a gastos variables
   document.getElementById("cat-field").classList.toggle("hidden", type !== "variable");
 }
 
@@ -684,7 +699,9 @@ modal.addEventListener("click", (e) => { if (e.target === modal) closeTxModal();
 formTx.addEventListener("submit", async (e) => {
   e.preventDefault();
   const type = document.querySelector("#type-toggle button.active").dataset.type;
-  const catByType = { variable: document.getElementById("tx-category").value, fixed: "Gasto fijo", income: "Ingreso", deduction: "Deducción nómina" };
+  const editingTx = state.editingTxId ? state.transactions.find((t) => t.id === state.editingTxId) : null;
+  const incomeCategory = (editingTx?.type === "income" && editingTx?.category === "Ingreso") ? "Ingreso" : "Otros ingresos";
+  const catByType = { variable: document.getElementById("tx-category").value || "Otros", fixed: "Gasto fijo", income: incomeCategory, deduction: "Deducción nómina" };
   const payload = {
     description: document.getElementById("tx-desc").value.trim(),
     amount: parseFloat(document.getElementById("tx-amount").value),
