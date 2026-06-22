@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -5,6 +6,8 @@ from sqlalchemy import extract
 
 from .. import models, schemas, auth
 from ..database import get_db
+
+T = models.TransactionType
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -94,6 +97,56 @@ def delete_transaction(
     db.delete(tx)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/copy-payroll", response_model=List[schemas.TransactionOut])
+def copy_payroll(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Copia nómina (income + deduction) del mes anterior al mes indicado."""
+    existing = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.year == year,
+        models.Transaction.month == month,
+        models.Transaction.type.in_([T.income, T.deduction]),
+    ).count()
+    if existing > 0:
+        raise HTTPException(400, "Este mes ya tiene nómina registrada")
+
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    prev_txs = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.year == prev_year,
+        models.Transaction.month == prev_month,
+        models.Transaction.type.in_([T.income, T.deduction]),
+    ).all()
+
+    if not prev_txs:
+        raise HTTPException(404, "No hay nómina en el mes anterior para copiar")
+
+    new_txs = []
+    for t in prev_txs:
+        new_tx = models.Transaction(
+            user_id=current_user.id,
+            description=t.description,
+            amount=t.amount,
+            type=t.type,
+            category=t.category,
+            month=month,
+            year=year,
+            date=date(year, month, 1),
+            notes="[copiado-de-plantilla]",
+        )
+        db.add(new_tx)
+        new_txs.append(new_tx)
+
+    db.commit()
+    for tx in new_txs:
+        db.refresh(tx)
+    return new_txs
 
 
 @router.get("/months/available")

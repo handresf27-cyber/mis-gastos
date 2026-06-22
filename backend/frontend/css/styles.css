@@ -547,3 +547,5 @@ a { color: var(--accent); text-decoration: none; }
   margin-top: 12px; flex-wrap: wrap; gap: 8px;
 }
 .fp-progress { font-size: 12px; color: var(--text-muted); }
+
+.payroll-col-title.accent { color: var(--accent); }

@@ -66,6 +66,9 @@ const Api = {
   availableMonths() {
     return this.request("/api/transactions/months/available");
   },
+  copyPayroll(year, month) {
+    return this.request(`/api/transactions/copy-payroll?year=${year}&month=${month}`, { method: "POST" });
+  },
 
   summary(year, month) {
     return this.request(`/api/metrics/summary?year=${year}&month=${month}`);

@@ -160,11 +160,30 @@ async function loadHome() {
   const txList = document.getElementById("tx-list");
   txList.innerHTML = `<div class="loader">Cargando...</div>`;
 
-  const [summary, txs, plans] = await Promise.all([
+  let [summary, txs, plans] = await Promise.all([
     Api.summary(state.year, state.month),
     Api.listTransactions(state.year, state.month),
     Api.listFixedPlans(state.year, state.month),
   ]);
+
+  // Auto-cargar del mes anterior si el mes está vacío
+  const hasPayroll = txs.some((t) => t.type === "income" || t.type === "deduction");
+  let autoCopied = false;
+  if (!hasPayroll) {
+    try { await Api.copyPayroll(state.year, state.month); autoCopied = true; } catch (_) {}
+  }
+  if (plans.length === 0) {
+    try { await Api.copyPreviousPlans(state.year, state.month); autoCopied = true; } catch (_) {}
+  }
+  if (autoCopied) {
+    [summary, txs, plans] = await Promise.all([
+      Api.summary(state.year, state.month),
+      Api.listTransactions(state.year, state.month),
+      Api.listFixedPlans(state.year, state.month),
+    ]);
+    if (!hasPayroll && txs.some((t) => t.type === "income")) showToast("Nómina y gastos fijos pre-cargados del mes anterior. Ajusta si cambiaron.");
+  }
+
   state.fixedPlans = plans;
   state.transactions = txs;
   state.summary = summary;
@@ -327,19 +346,24 @@ document.getElementById("copy-prev-plans-btn").addEventListener("click", async (
 });
 
 function renderPayroll(txs, summary) {
-  const incomes = txs.filter((t) => t.type === "income");
+  const salaryIncomes = txs.filter((t) => t.type === "income" && t.category === "Ingreso");
+  const extraIncomes = txs.filter((t) => t.type === "income" && t.category !== "Ingreso");
   const deductions = txs.filter((t) => t.type === "deduction");
 
   const line = (t) => `
-    <div class="payroll-line" data-id="${t.id}" style="cursor:pointer">
+    <div class="payroll-line" data-id="${t.id}" style="cursor:pointer" title="Clic para editar">
       <span class="pl-name">${escapeHtml(t.description)}</span>
       <span class="pl-val tabular">${cop(t.amount)}</span>
     </div>`;
 
+  const empty = (msg) => `<div class="pl-name" style="font-size:13px;color:var(--text-faint);padding:4px 0">${msg}</div>`;
+
   document.getElementById("income-list").innerHTML =
-    incomes.length ? incomes.map(line).join("") : `<div class="pl-name" style="font-size:13px;color:var(--text-faint);padding:4px 0">Sin ingresos registrados</div>`;
+    salaryIncomes.length ? salaryIncomes.map(line).join("") : empty("Sin ingresos de nómina");
+  document.getElementById("extra-income-list").innerHTML =
+    extraIncomes.length ? extraIncomes.map(line).join("") : empty("—");
   document.getElementById("deduction-list").innerHTML =
-    deductions.length ? deductions.map(line).join("") : `<div class="pl-name" style="font-size:13px;color:var(--text-faint);padding:4px 0">Sin deducciones registradas</div>`;
+    deductions.length ? deductions.map(line).join("") : empty("Sin deducciones registradas");
 
   document.getElementById("ps-income").textContent = cop(summary.total_income);
   document.getElementById("ps-deduction").textContent = cop(summary.total_deduction);
@@ -350,6 +374,26 @@ function renderPayroll(txs, summary) {
     row.addEventListener("click", () => openTxModal(parseInt(row.dataset.id)));
   });
 }
+
+document.getElementById("add-extra-income-btn").addEventListener("click", async () => {
+  const descEl = document.getElementById("extra-income-desc");
+  const amtEl = document.getElementById("extra-income-amount");
+  const desc = descEl.value.trim();
+  const amount = parseFloat(amtEl.value);
+  if (!desc || !amount || amount <= 0) { showToast("Escribe descripción y valor"); return; }
+  try {
+    await Api.createTransaction({
+      description: desc,
+      amount,
+      type: "income",
+      category: "Otros ingresos",
+      date: `${state.year}-${String(state.month).padStart(2, "0")}-01`,
+    });
+    descEl.value = ""; amtEl.value = "";
+    showToast("Ingreso adicional agregado");
+    loadHome();
+  } catch (err) { showToast(err.message); }
+});
 
 function dateLabel(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
