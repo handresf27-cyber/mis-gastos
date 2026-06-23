@@ -75,7 +75,7 @@
         <strong>Mis Gastos</strong>
       </div>
       <button class="nav-item active" data-view="home"><span class="ic">🏠</span> Inicio</button>
-      <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Métricas</button>
+      <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Comparativos</button>
       <button class="nav-item" data-view="cards"><span class="ic">💳</span> Tarjetas</button>
       <button class="nav-item" data-view="funds"><span class="ic">🏦</span> Fondos</button>
       <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
@@ -207,21 +207,34 @@
         </section>
 
         <!-- METRICS -->
+        <!-- COMPARATIVOS -->
         <section id="view-metrics" class="view hidden">
-          <div class="metrics-grid">
-            <div class="chart-card">
-              <h3>Gastos variables por categoría</h3>
-              <div class="chart-wrap"><canvas id="chart-categories"></canvas></div>
-              <div class="cat-legend" id="cat-legend"></div>
+          <div class="comp-year-tabs" id="comp-year-tabs"></div>
+
+          <div class="chart-card">
+            <div class="comp-chart-head">
+              <h3 id="comp-chart-title">Fijos vs Variables — 2026</h3>
+              <div class="comp-legend">
+                <span class="comp-dot" style="background:var(--fixed-color)"></span>Fijos
+                <span class="comp-dot" style="background:var(--negative); margin-left:12px"></span>Variables
+              </div>
             </div>
-            <div class="chart-card">
-              <h3>Ingresos vs. gastos del mes</h3>
-              <div class="chart-wrap"><canvas id="chart-month"></canvas></div>
-            </div>
-            <div class="chart-card full">
-              <h3>Tendencia del año</h3>
-              <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
-            </div>
+            <div class="chart-wrap"><canvas id="chart-comparison"></canvas></div>
+          </div>
+
+          <div class="comp-table-wrap">
+            <table class="comp-table" id="comp-table">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th class="num">Gastos Fijos</th>
+                  <th class="num">Gastos Variables</th>
+                  <th class="num">Total gastos</th>
+                </tr>
+              </thead>
+              <tbody id="comp-table-body"></tbody>
+              <tfoot id="comp-table-foot"></tfoot>
+            </table>
           </div>
         </section>
 
@@ -277,7 +290,7 @@
 
       <nav class="bottom-nav">
         <button class="active" data-view="home"><span class="ic">🏠</span>Inicio</button>
-        <button data-view="metrics"><span class="ic">📊</span>Métricas</button>
+        <button data-view="metrics"><span class="ic">📊</span>Comparativos</button>
         <button data-view="cards"><span class="ic">💳</span>Tarjetas</button>
         <button data-view="funds"><span class="ic">🏦</span>Fondos</button>
         <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>

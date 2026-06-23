@@ -127,6 +127,8 @@ class MonthTrendPoint(BaseModel):
     year: int
     month: int
     total_income: float
+    total_fixed: float
+    total_variable: float
     total_expenses: float
     balance: float
 

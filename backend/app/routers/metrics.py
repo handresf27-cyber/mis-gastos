@@ -120,6 +120,8 @@ def yearly_trend(
                 year=year,
                 month=month,
                 total_income=net_income,
+                total_fixed=fixed,
+                total_variable=variable,
                 total_expenses=fixed + variable,
                 balance=net_income - fixed - variable,
             )

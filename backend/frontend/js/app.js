@@ -103,11 +103,11 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
 
-  const titles = { home: "Inicio", metrics: "Métricas", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
+  const titles = { home: "Inicio", metrics: "Comparativos", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
   document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
 
-  // El navegador de meses solo aplica a vistas de home/metrics
-  const monthDependentViews = ["home", "metrics"];
+  // El navegador de meses solo aplica a home
+  const monthDependentViews = ["home"];
   document.getElementById("month-nav").style.display = monthDependentViews.includes(view) ? "" : "none";
 
   if (view === "home") loadHome();
@@ -181,7 +181,7 @@ function refreshCurrentView() {
   document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
   renderMonthGrid();
   if (state.activeView === "home") loadHome();
-  else if (state.activeView === "metrics") loadMetrics();
+  else if (state.activeView === "metrics") loadMetrics(state.compYear || 2026);
 }
 
 // ============ HOME / CONCILIACIÓN ============
@@ -540,98 +540,134 @@ function escapeHtml(str) {
 // ============ MÉTRICAS ============
 const CHART_PALETTE = ["#d4a843", "#6c8fc7", "#5fb87a", "#e2685a", "#a47bc7", "#5fb8b0", "#c78a5f", "#8d97a7"];
 
-async function loadMetrics() {
-  const [cats, summary, trend] = await Promise.all([
-    Api.categoryBreakdown(state.year, state.month),
-    Api.summary(state.year, state.month),
-    Api.yearlyTrend(state.year),
-  ]);
-
-  renderCategoryChart(cats);
-  renderMonthChart(summary);
-  renderTrendChart(trend);
-}
+const COMP_START_YEAR = 2026;
 
 function destroyChart(key) {
   if (state.charts[key]) { state.charts[key].destroy(); delete state.charts[key]; }
 }
 
-function renderCategoryChart(cats) {
-  destroyChart("categories");
-  const legend = document.getElementById("cat-legend");
-  if (!cats.length) {
-    legend.innerHTML = `<div class="empty-state"><p>Sin gastos variables registrados este mes.</p></div>`;
-    return;
+function renderCompYearTabs(selectedYear) {
+  const currentYear = new Date().getFullYear();
+  const maxYear = currentYear + 1;
+  const tabs = document.getElementById("comp-year-tabs");
+  tabs.innerHTML = "";
+  for (let y = COMP_START_YEAR; y <= maxYear; y++) {
+    const btn = document.createElement("button");
+    btn.className = "comp-year-tab" + (y === selectedYear ? " active" : "");
+    btn.textContent = y;
+    btn.addEventListener("click", () => loadMetrics(y));
+    tabs.appendChild(btn);
   }
-  const ctx = document.getElementById("chart-categories");
-  state.charts.categories = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels: cats.map((c) => c.category),
-      datasets: [{ data: cats.map((c) => c.total), backgroundColor: CHART_PALETTE, borderWidth: 0 }],
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      cutout: "68%",
-      maintainAspectRatio: false,
-    },
-  });
-
-  legend.innerHTML = cats.map((c, i) => `
-    <div class="cat-legend-row">
-      <span class="sw" style="background:${CHART_PALETTE[i % CHART_PALETTE.length]}"></span>
-      <span class="name">${escapeHtml(c.category)}</span>
-      <span class="amt tabular">${cop(c.total)}</span>
-    </div>
-  `).join("");
 }
 
-function renderMonthChart(summary) {
-  destroyChart("month");
-  const ctx = document.getElementById("chart-month");
-  state.charts.month = new Chart(ctx, {
+async function loadMetrics(year) {
+  year = year || state.compYear || COMP_START_YEAR;
+  state.compYear = year;
+  renderCompYearTabs(year);
+  document.getElementById("comp-chart-title").textContent = `Fijos vs Variables — ${year}`;
+
+  let trend = [];
+  try { trend = await Api.yearlyTrend(year); } catch (_) {}
+
+  renderComparisonChart(trend);
+  renderComparisonTable(trend);
+}
+
+function renderComparisonChart(trend) {
+  destroyChart("comparison");
+
+  // Armar los 12 meses con ceros por defecto
+  const fixedData    = Array(12).fill(0);
+  const variableData = Array(12).fill(0);
+  trend.forEach((p) => {
+    fixedData[p.month - 1]    = p.total_fixed    || 0;
+    variableData[p.month - 1] = p.total_variable || 0;
+  });
+
+  const ctx = document.getElementById("chart-comparison");
+  state.charts.comparison = new Chart(ctx, {
     type: "bar",
     data: {
-      labels: ["Ingresos", "Fijos", "Variables"],
-      datasets: [{
-        data: [summary.total_income, summary.total_fixed, summary.total_variable],
-        backgroundColor: ["#5fb87a", "#6c8fc7", "#e2685a"],
-        borderRadius: 8,
-        maxBarThickness: 60,
-      }],
-    },
-    options: {
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#8d97a7" } },
-        y: { grid: { color: "#2a3342" }, ticks: { color: "#8d97a7", callback: (v) => cop(v) } },
-      },
-    },
-  });
-}
-
-function renderTrendChart(trend) {
-  destroyChart("trend");
-  const ctx = document.getElementById("chart-trend");
-  state.charts.trend = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: trend.map((p) => MONTH_NAMES[p.month - 1].slice(0, 3)),
+      labels: MONTH_SHORT,
       datasets: [
-        { label: "Ingresos", data: trend.map((p) => p.total_income), borderColor: "#5fb87a", backgroundColor: "rgba(95,184,122,0.12)", tension: 0.35, fill: true },
-        { label: "Gastos", data: trend.map((p) => p.total_expenses), borderColor: "#e2685a", backgroundColor: "rgba(226,104,90,0.10)", tension: 0.35, fill: true },
+        {
+          label: "Gastos Fijos",
+          data: fixedData,
+          backgroundColor: "rgba(108,143,199,0.85)",
+          borderRadius: 5,
+          maxBarThickness: 28,
+        },
+        {
+          label: "Gastos Variables",
+          data: variableData,
+          backgroundColor: "rgba(226,104,90,0.85)",
+          borderRadius: 5,
+          maxBarThickness: 28,
+        },
       ],
     },
     options: {
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: "#8d97a7" } } },
+      plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { display: false }, ticks: { color: "#8d97a7" } },
-        y: { grid: { color: "#2a3342" }, ticks: { color: "#8d97a7", callback: (v) => cop(v) } },
+        x: {
+          grid: { display: false },
+          ticks: { color: "#8d97a7", font: { size: 11 } },
+        },
+        y: {
+          grid: { color: "#2a3342" },
+          ticks: { color: "#8d97a7", callback: (v) => {
+            if (v >= 1_000_000) return "$" + (v / 1_000_000).toFixed(1) + "M";
+            if (v >= 1_000) return "$" + (v / 1_000).toFixed(0) + "K";
+            return "$" + v;
+          }},
+        },
       },
     },
   });
+}
+
+function renderComparisonTable(trend) {
+  const byMonth = {};
+  trend.forEach((p) => { byMonth[p.month] = p; });
+
+  let totalFixed = 0, totalVariable = 0;
+  const tbody = document.getElementById("comp-table-body");
+
+  tbody.innerHTML = Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1;
+    const p = byMonth[m];
+    if (!p) {
+      return `<tr class="comp-row-empty">
+        <td>${MONTH_NAMES[i].charAt(0).toUpperCase() + MONTH_NAMES[i].slice(1)}</td>
+        <td class="num" colspan="3" style="color:var(--text-faint)">Sin datos</td>
+      </tr>`;
+    }
+    totalFixed    += p.total_fixed    || 0;
+    totalVariable += p.total_variable || 0;
+    const total = (p.total_fixed || 0) + (p.total_variable || 0);
+    const fixedPct = total > 0 ? Math.round(((p.total_fixed || 0) / total) * 100) : 0;
+    return `<tr>
+      <td>${MONTH_NAMES[i].charAt(0).toUpperCase() + MONTH_NAMES[i].slice(1)}</td>
+      <td class="num" style="color:var(--fixed-color)">${cop(p.total_fixed || 0)}</td>
+      <td class="num" style="color:var(--negative)">${cop(p.total_variable || 0)}</td>
+      <td class="num">
+        ${cop(total)}
+        <div class="comp-bar-mini">
+          <div class="comp-bar-fixed" style="width:${fixedPct}%"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+
+  const grandTotal = totalFixed + totalVariable;
+  document.getElementById("comp-table-foot").innerHTML = `
+    <tr class="comp-total-row">
+      <td><strong>Total año</strong></td>
+      <td class="num" style="color:var(--fixed-color)"><strong>${cop(totalFixed)}</strong></td>
+      <td class="num" style="color:var(--negative)"><strong>${cop(totalVariable)}</strong></td>
+      <td class="num"><strong>${cop(grandTotal)}</strong></td>
+    </tr>`;
 }
 
 // ============ CATEGORÍAS ============
@@ -1460,9 +1496,10 @@ document.getElementById("purchase-modal-delete").addEventListener("click", async
 
 async function bootstrapApp() {
   state.categories = await Api.listCategories().catch(() => []);
+  state.compYear = new Date().getFullYear() < COMP_START_YEAR ? COMP_START_YEAR : new Date().getFullYear();
   await initMonthNav();
   document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
-  setExpenseTab("variable"); // abrir gastos variables por defecto
+  setExpenseTab("variable");
   switchView("home");
 }
 
