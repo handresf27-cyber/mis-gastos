@@ -103,7 +103,7 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
 
-  const titles = { home: "Inicio", metrics: "Métricas", cards: "Tarjetas de Crédito", categories: "Categorías", admin: "Administración" };
+  const titles = { home: "Inicio", metrics: "Métricas", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
   document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
 
   // El navegador de meses solo aplica a vistas de home/metrics
@@ -113,6 +113,7 @@ function switchView(view) {
   if (view === "home") loadHome();
   if (view === "metrics") loadMetrics();
   if (view === "cards") loadCards();
+  if (view === "funds") loadFunds();
   if (view === "admin") loadAdmin();
   if (view === "categories") loadCategories();
 }
@@ -812,6 +813,257 @@ document.getElementById("balance-save").addEventListener("click", async () => {
   } catch (err) { showToast(err.message); }
 });
 
+
+// ============================================================
+// FONDOS ADMINISTRADOS
+// ============================================================
+
+const FUND_MOVE_TYPES = {
+  "Ingreso":             { icon: "💰", dir: "in",  color: "var(--positive)" },
+  "Retiro":              { icon: "💸", dir: "out", color: "var(--negative)" },
+  "Préstamo otorgado":   { icon: "🤝", dir: "out", color: "#d4a843" },
+  "Cobro préstamo":      { icon: "↩️", dir: "in",  color: "var(--positive)" },
+  "CDT apertura":        { icon: "🏦", dir: "out", color: "var(--fixed-color)" },
+  "CDT rendimiento":     { icon: "📈", dir: "in",  color: "var(--positive)" },
+  "Intereses":           { icon: "📈", dir: "in",  color: "var(--positive)" },
+  "Otros":               { icon: "📋", dir: "in",  color: "var(--text-muted)" },
+};
+
+function fundMoveDir(amount) { return amount >= 0 ? "in" : "out"; }
+
+async function loadFunds() {
+  try {
+    const funds = await Api.listFunds();
+    state.funds = funds;
+    renderFunds(funds);
+  } catch (err) { showToast(err.message); }
+}
+
+function renderFunds(funds) {
+  const container = document.getElementById("funds-list");
+  if (!funds.length) {
+    container.innerHTML = `<div class="fp-empty" style="margin-top:24px;">No tienes fondos registrados.<br>Crea uno con el botón de arriba.</div>`;
+    return;
+  }
+
+  container.innerHTML = funds.map((fund) => {
+    const totalIn  = fund.movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0);
+    const totalOut = fund.movements.filter(m => m.amount < 0).reduce((s, m) => s + Math.abs(m.amount), 0);
+
+    // Movimientos ordenados por fecha desc para mostrar los más recientes primero
+    const sorted = [...fund.movements].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+    // Saldo corrido (cronológico asc)
+    let running = 0;
+    const balanceMap = {};
+    [...fund.movements].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id).forEach(m => {
+      running += m.amount;
+      balanceMap[m.id] = running;
+    });
+
+    const movsHtml = sorted.length ? sorted.map((m) => {
+      const meta = FUND_MOVE_TYPES[m.move_type] || FUND_MOVE_TYPES["Otros"];
+      const isIn = m.amount >= 0;
+      const sign = isIn ? "+" : "−";
+      const color = isIn ? "var(--positive)" : "var(--negative)";
+      return `
+        <div class="fund-mov-row" data-fund-id="${fund.id}" data-mov-id="${m.id}">
+          <div class="fund-mov-icon">${meta.icon}</div>
+          <div class="fund-mov-info">
+            <div class="fund-mov-desc">${escapeHtml(m.description)}</div>
+            <div class="fund-mov-meta">
+              <span class="fund-type-badge">${escapeHtml(m.move_type)}</span>
+              ${dateLabel(m.date)}
+              ${m.notes ? `· <em>${escapeHtml(m.notes)}</em>` : ""}
+            </div>
+          </div>
+          <div class="fund-mov-right">
+            <div class="fund-mov-amount tabular" style="color:${color}">${sign}${cop(Math.abs(m.amount))}</div>
+            <div class="fund-mov-balance tabular">= ${cop(balanceMap[m.id])}</div>
+          </div>
+        </div>`;
+    }).join("") : `<div class="fp-empty">Sin movimientos. Registra el primero con el botón +.</div>`;
+
+    return `
+      <div class="fund-block" id="fund-block-${fund.id}">
+        <div class="fund-head">
+          <div class="fund-head-info">
+            <div class="fund-name">🏦 ${escapeHtml(fund.name)}</div>
+            ${fund.description ? `<div class="fund-desc-text">${escapeHtml(fund.description)}</div>` : ""}
+          </div>
+          <div class="fund-head-actions">
+            <button class="btn-icon fund-add-mov-btn" data-fund-id="${fund.id}" title="Agregar movimiento">+</button>
+            <button class="btn-icon fund-edit-btn" data-fund-id="${fund.id}" title="Editar fondo">✎</button>
+          </div>
+        </div>
+        <div class="fund-summary">
+          <div class="fund-summary-item">
+            <div class="fund-summary-label">Saldo actual</div>
+            <div class="fund-summary-val tabular ${fund.balance >= 0 ? "positive" : "negative"}">${cop(fund.balance)}</div>
+          </div>
+          <div class="fund-summary-item">
+            <div class="fund-summary-label">Total entradas</div>
+            <div class="fund-summary-val tabular positive">+${cop(totalIn)}</div>
+          </div>
+          <div class="fund-summary-item">
+            <div class="fund-summary-label">Total salidas</div>
+            <div class="fund-summary-val tabular negative">−${cop(totalOut)}</div>
+          </div>
+        </div>
+        <div class="fund-movs">${movsHtml}</div>
+      </div>`;
+  }).join("");
+
+  // Listeners
+  container.querySelectorAll(".fund-add-mov-btn").forEach(btn =>
+    btn.addEventListener("click", () => openFundMovModal(parseInt(btn.dataset.fundId)))
+  );
+  container.querySelectorAll(".fund-edit-btn").forEach(btn =>
+    btn.addEventListener("click", () => openFundModal(parseInt(btn.dataset.fundId)))
+  );
+  container.querySelectorAll(".fund-mov-row").forEach(row =>
+    row.addEventListener("click", () => openFundMovModal(
+      parseInt(row.dataset.fundId), parseInt(row.dataset.movId)
+    ))
+  );
+}
+
+// ---- Modal de fondo ----
+let _editingFundId = null;
+
+function openFundModal(fundId = null) {
+  _editingFundId = fundId;
+  const fund = fundId ? (state.funds || []).find(f => f.id === fundId) : null;
+  document.getElementById("fund-modal-title").textContent = fund ? "Editar fondo" : "Nuevo fondo";
+  document.getElementById("fund-name").value = fund ? fund.name : "";
+  document.getElementById("fund-desc").value = fund ? (fund.description || "") : "";
+  document.getElementById("fund-modal-delete").classList.toggle("hidden", !fund);
+  document.getElementById("modal-fund").classList.remove("hidden");
+  document.getElementById("fund-name").focus();
+}
+
+function closeFundModal() { document.getElementById("modal-fund").classList.add("hidden"); }
+
+document.getElementById("fund-modal-close").addEventListener("click", closeFundModal);
+document.getElementById("fund-modal-cancel").addEventListener("click", closeFundModal);
+document.getElementById("add-fund-btn").addEventListener("click", () => openFundModal());
+
+document.getElementById("fund-modal-save").addEventListener("click", async () => {
+  const name = document.getElementById("fund-name").value.trim();
+  if (!name) { showToast("Escribe el nombre del fondo"); return; }
+  const description = document.getElementById("fund-desc").value.trim() || null;
+  try {
+    if (_editingFundId) {
+      await Api.updateFund(_editingFundId, { name, description });
+    } else {
+      await Api.createFund({ name, description });
+    }
+    closeFundModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("fund-modal-delete").addEventListener("click", async () => {
+  if (!_editingFundId) return;
+  const fund = (state.funds || []).find(f => f.id === _editingFundId);
+  if (!confirm(`¿Eliminar el fondo "${fund?.name}"?\nSe borrarán todos sus movimientos.`)) return;
+  try {
+    await Api.deleteFund(_editingFundId);
+    closeFundModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+// ---- Modal de movimiento ----
+let _movFundId = null;
+let _editingMovId = null;
+
+function openFundMovModal(fundId, movId = null) {
+  _movFundId = fundId;
+  _editingMovId = movId;
+
+  const fund = (state.funds || []).find(f => f.id === fundId);
+  const mov = movId ? (fund?.movements || []).find(m => m.id === movId) : null;
+
+  document.getElementById("fund-mov-title").textContent = mov ? "Editar movimiento" : "Nuevo movimiento";
+  document.getElementById("fund-mov-amount").value = mov ? Math.abs(mov.amount) : "";
+  document.getElementById("fund-mov-desc").value = mov ? mov.description : "";
+  document.getElementById("fund-mov-notes").value = mov ? (mov.notes || "") : "";
+  document.getElementById("fund-mov-type").value = mov ? mov.move_type : "Ingreso";
+
+  // fecha: hoy o la del movimiento
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById("fund-mov-date").value = mov ? mov.date : today;
+
+  // dirección
+  const dir = mov ? (mov.amount >= 0 ? "in" : "out") : "in";
+  document.querySelectorAll("#fund-direction-toggle button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.dir === dir);
+  });
+
+  document.getElementById("fund-mov-delete").classList.toggle("hidden", !mov);
+  document.getElementById("modal-fund-mov").classList.remove("hidden");
+  document.getElementById("fund-mov-desc").focus();
+}
+
+function closeFundMovModal() { document.getElementById("modal-fund-mov").classList.add("hidden"); }
+
+document.getElementById("fund-mov-close").addEventListener("click", closeFundMovModal);
+document.getElementById("fund-mov-cancel").addEventListener("click", closeFundMovModal);
+
+document.querySelectorAll("#fund-direction-toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#fund-direction-toggle button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+
+// Al cambiar el tipo, sugiere la dirección automáticamente
+document.getElementById("fund-mov-type").addEventListener("change", () => {
+  const type = document.getElementById("fund-mov-type").value;
+  const meta = FUND_MOVE_TYPES[type];
+  if (!meta) return;
+  const dir = meta.dir;
+  document.querySelectorAll("#fund-direction-toggle button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.dir === dir);
+  });
+});
+
+document.getElementById("fund-mov-save").addEventListener("click", async () => {
+  const absAmount = parseFloat(document.getElementById("fund-mov-amount").value);
+  const description = document.getElementById("fund-mov-desc").value.trim();
+  const move_type = document.getElementById("fund-mov-type").value;
+  const date = document.getElementById("fund-mov-date").value;
+  const notes = document.getElementById("fund-mov-notes").value.trim() || null;
+
+  if (!description) { showToast("Escribe una descripción"); return; }
+  if (!absAmount || absAmount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
+  if (!date) { showToast("Selecciona una fecha"); return; }
+
+  const activeDir = document.querySelector("#fund-direction-toggle button.active")?.dataset.dir;
+  const amount = activeDir === "out" ? -absAmount : absAmount;
+
+  const body = { date, amount, move_type, description, notes };
+  try {
+    if (_editingMovId) {
+      await Api.updateFundMovement(_movFundId, _editingMovId, body);
+    } else {
+      await Api.addFundMovement(_movFundId, body);
+    }
+    closeFundMovModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("fund-mov-delete").addEventListener("click", async () => {
+  if (!_editingMovId) return;
+  if (!confirm("¿Eliminar este movimiento?")) return;
+  try {
+    await Api.deleteFundMovement(_movFundId, _editingMovId);
+    closeFundMovModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
 
 // ============================================================
 // ADMINISTRACIÓN DE USUARIOS

@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import models
 from .database import engine
-from .routers import auth, transactions, metrics, categories, statement, fixed_plans, credit_cards, admin
+from .routers import auth, transactions, metrics, categories, statement, fixed_plans, credit_cards, admin, funds
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -27,6 +27,7 @@ app.include_router(statement.router)
 app.include_router(fixed_plans.router)
 app.include_router(credit_cards.router)
 app.include_router(admin.router)
+app.include_router(funds.router)
 
 
 @app.get("/api/health")

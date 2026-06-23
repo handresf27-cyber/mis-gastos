@@ -38,6 +38,9 @@ class User(Base):
     credit_cards = relationship(
         "CreditCard", back_populates="owner", cascade="all, delete-orphan"
     )
+    funds = relationship(
+        "Fund", back_populates="owner", cascade="all, delete-orphan"
+    )
 
 
 class Category(Base):
@@ -112,6 +115,39 @@ class MonthlyStatement(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="statements")
+
+
+class Fund(Base):
+    """Fondo de terceros que el usuario administra (ej. 'Dinero Tío')."""
+    __tablename__ = "funds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="funds")
+    movements = relationship("FundMovement", back_populates="fund",
+                             cascade="all, delete-orphan",
+                             order_by="FundMovement.date, FundMovement.id")
+
+
+class FundMovement(Base):
+    """Movimiento de entrada o salida en un fondo administrado.
+    amount > 0 = entra dinero, amount < 0 = sale dinero."""
+    __tablename__ = "fund_movements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fund_id = Column(Integer, ForeignKey("funds.id"), nullable=False)
+    date = Column(Date, nullable=False, default=date.today)
+    amount = Column(Float, nullable=False)           # + entra / - sale
+    move_type = Column(String, nullable=False, default="Otros")
+    description = Column(String, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    fund = relationship("Fund", back_populates="movements")
 
 
 class CreditCard(Base):

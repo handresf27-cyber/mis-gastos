@@ -77,6 +77,7 @@
       <button class="nav-item active" data-view="home"><span class="ic">🏠</span> Inicio</button>
       <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Métricas</button>
       <button class="nav-item" data-view="cards"><span class="ic">💳</span> Tarjetas</button>
+      <button class="nav-item" data-view="funds"><span class="ic">🏦</span> Fondos</button>
       <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
       <button class="nav-item admin-only hidden" data-view="admin"><span class="ic">🛡️</span> Admin</button>
       <div class="sidebar-footer">
@@ -233,6 +234,15 @@
           <div id="admin-users-list"></div>
         </section>
 
+        <!-- FONDOS ADMINISTRADOS -->
+        <section id="view-funds" class="view hidden">
+          <div class="funds-header">
+            <div class="funds-header-title">Fondos administrados</div>
+            <button class="btn btn-primary" id="add-fund-btn">+ Nuevo fondo</button>
+          </div>
+          <div id="funds-list"></div>
+        </section>
+
         <!-- TARJETAS DE CRÉDITO -->
         <section id="view-cards" class="view hidden">
           <div class="cards-header">
@@ -263,6 +273,7 @@
         <button class="active" data-view="home"><span class="ic">🏠</span>Inicio</button>
         <button data-view="metrics"><span class="ic">📊</span>Métricas</button>
         <button data-view="cards"><span class="ic">💳</span>Tarjetas</button>
+        <button data-view="funds"><span class="ic">🏦</span>Fondos</button>
         <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>
         <button class="admin-only hidden" data-view="admin"><span class="ic">🛡️</span>Admin</button>
       </nav>
@@ -317,6 +328,79 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <!-- ======= MODAL: nuevo / editar fondo ======= -->
+  <div id="modal-fund" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="fund-modal-title">Nuevo fondo</h3>
+        <button class="modal-close" id="fund-modal-close">&times;</button>
+      </div>
+      <div class="field">
+        <label>Nombre del fondo</label>
+        <input type="text" id="fund-name" placeholder="Ej. Dinero Tío, Fondo familiar..." />
+      </div>
+      <div class="field">
+        <label>Descripción (opcional)</label>
+        <input type="text" id="fund-desc" placeholder="A quién pertenece o para qué es..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fund-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="fund-modal-save">Guardar</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="fund-modal-delete">Eliminar fondo y todos sus movimientos</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: nuevo / editar movimiento de fondo ======= -->
+  <div id="modal-fund-mov" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="fund-mov-title">Nuevo movimiento</h3>
+        <button class="modal-close" id="fund-mov-close">&times;</button>
+      </div>
+      <div class="type-toggle" id="fund-direction-toggle">
+        <button data-dir="in" class="active">▲ Entra</button>
+        <button data-dir="out">▼ Sale</button>
+      </div>
+      <div class="field">
+        <label>Tipo de movimiento</label>
+        <select id="fund-mov-type">
+          <option value="Ingreso">Ingreso</option>
+          <option value="Retiro">Retiro</option>
+          <option value="Préstamo otorgado">Préstamo otorgado</option>
+          <option value="Cobro préstamo">Cobro préstamo</option>
+          <option value="CDT apertura">CDT apertura</option>
+          <option value="CDT rendimiento">CDT rendimiento</option>
+          <option value="Intereses">Intereses</option>
+          <option value="Otros">Otros</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Valor (COP)</label>
+          <input type="number" id="fund-mov-amount" step="1" placeholder="0" min="1" />
+        </div>
+        <div class="field">
+          <label>Fecha</label>
+          <input type="date" id="fund-mov-date" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Descripción</label>
+        <input type="text" id="fund-mov-desc" placeholder="Ej. Depósito inicial, Préstamo a Juan..." />
+      </div>
+      <div class="field">
+        <label>Notas adicionales (opcional)</label>
+        <input type="text" id="fund-mov-notes" placeholder="Detalles, condiciones, plazo..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fund-mov-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="fund-mov-save">Guardar</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="fund-mov-delete">Eliminar movimiento</button>
+    </div>
+  </div>
 
   <!-- ======= MODAL: nueva / editar tarjeta ======= -->
   <div id="modal-card" class="modal hidden">

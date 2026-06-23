@@ -224,3 +224,56 @@ class CreditCardOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ---------- Fondos administrados ----------
+
+class FundCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class FundUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class FundMovementCreate(BaseModel):
+    date: date
+    amount: float          # positivo = entra, negativo = sale
+    move_type: str = "Otros"
+    description: str
+    notes: Optional[str] = None
+
+
+class FundMovementUpdate(BaseModel):
+    date: Optional[date] = None
+    amount: Optional[float] = None
+    move_type: Optional[str] = None
+    description: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FundMovementOut(BaseModel):
+    id: int
+    fund_id: int
+    date: date
+    amount: float
+    move_type: str
+    description: str
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FundOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    balance: float = 0.0
+    movements: List[FundMovementOut] = []
+
+    class Config:
+        from_attributes = True

@@ -639,6 +639,66 @@ a { color: var(--accent); text-decoration: none; }
 .progress-label { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
 
 /* ============================================================
+   FONDOS ADMINISTRADOS
+   ============================================================ */
+
+.funds-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px;
+}
+.funds-header-title { font-size: 16px; font-weight: 600; color: var(--text); }
+
+.fund-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); margin-bottom: 16px; overflow: hidden;
+}
+
+.fund-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px;
+}
+.fund-head-info { flex: 1; min-width: 0; }
+.fund-name { font-size: 16px; font-weight: 700; color: var(--text); }
+.fund-desc-text { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.fund-head-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.fund-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.fund-summary-item {
+  padding: 10px 14px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.fund-summary-item:last-child { border-right: none; }
+.fund-summary-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
+.fund-summary-val { font-size: 15px; font-weight: 700; margin-top: 2px; }
+
+.fund-movs { padding: 0; }
+
+.fund-mov-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s;
+}
+.fund-mov-row:last-child { border-bottom: none; }
+.fund-mov-row:hover { background: var(--surface-hover); }
+
+.fund-mov-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.fund-mov-info { flex: 1; min-width: 0; }
+.fund-mov-desc { font-size: 14px; font-weight: 500; color: var(--text); }
+.fund-mov-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.fund-type-badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 20px;
+  background: var(--surface-hover); color: var(--text-muted);
+  border: 1px solid var(--border); white-space: nowrap;
+}
+
+.fund-mov-right { text-align: right; flex-shrink: 0; }
+.fund-mov-amount { font-size: 14px; font-weight: 700; }
+.fund-mov-balance { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* ============================================================
    ADMIN
    ============================================================ */
 

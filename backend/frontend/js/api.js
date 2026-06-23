@@ -109,6 +109,28 @@ const Api = {
     return this.request(`/api/fixed-plans/copy-previous?year=${year}&month=${month}`, { method: "POST" });
   },
 
+  listFunds() {
+    return this.request("/api/funds");
+  },
+  createFund(body) {
+    return this.request("/api/funds", { method: "POST", body });
+  },
+  updateFund(id, body) {
+    return this.request(`/api/funds/${id}`, { method: "PUT", body });
+  },
+  deleteFund(id) {
+    return this.request(`/api/funds/${id}`, { method: "DELETE" });
+  },
+  addFundMovement(fundId, body) {
+    return this.request(`/api/funds/${fundId}/movements`, { method: "POST", body });
+  },
+  updateFundMovement(fundId, movId, body) {
+    return this.request(`/api/funds/${fundId}/movements/${movId}`, { method: "PUT", body });
+  },
+  deleteFundMovement(fundId, movId) {
+    return this.request(`/api/funds/${fundId}/movements/${movId}`, { method: "DELETE" });
+  },
+
   adminListUsers() {
     return this.request("/api/admin/users");
   },
