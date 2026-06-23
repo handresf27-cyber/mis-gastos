@@ -861,11 +861,17 @@ a { color: var(--accent); text-decoration: none; }
 .receipt-image-row { align-items: flex-start; }
 .receipt-thumb {
   width: 80px; height: 80px; object-fit: cover;
-  border-radius: var(--radius-sm); cursor: pointer; flex-shrink: 0;
+  border-radius: var(--radius-sm); cursor: zoom-in; flex-shrink: 0;
   border: 1px solid var(--border);
-  transition: opacity .15s;
+  transition: transform .2s ease, box-shadow .2s ease;
+  transform-origin: left center;
 }
-.receipt-thumb:hover { opacity: 0.85; }
+.receipt-thumb:hover {
+  transform: scale(2.8);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 10;
+  position: relative;
+}
 .receipt-image-actions {
   display: flex; flex-direction: column; gap: 6px;
 }
