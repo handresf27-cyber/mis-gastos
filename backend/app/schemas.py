@@ -21,6 +21,19 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     full_name: Optional[str] = None
+    is_admin: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    created_at: datetime
+    transaction_count: int = 0
+    is_admin: bool = False
 
     class Config:
         from_attributes = True

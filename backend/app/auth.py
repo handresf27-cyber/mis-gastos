@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 from . import models
 from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from .database import get_db
+
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "handresf27@gmail.com")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
@@ -50,3 +53,9 @@ def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+def get_current_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if current_user.email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Se requieren permisos de administrador")
+    return current_user

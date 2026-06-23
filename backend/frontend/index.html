@@ -78,6 +78,7 @@
       <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Métricas</button>
       <button class="nav-item" data-view="cards"><span class="ic">💳</span> Tarjetas</button>
       <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
+      <button class="nav-item admin-only hidden" data-view="admin"><span class="ic">🛡️</span> Admin</button>
       <div class="sidebar-footer">
         <div class="sidebar-user" id="sidebar-user"></div>
         <button class="nav-item" id="logout-btn-desktop"><span class="ic">⎋</span> Cerrar sesión</button>
@@ -223,6 +224,15 @@
           </div>
         </section>
 
+        <!-- ADMIN -->
+        <section id="view-admin" class="view hidden">
+          <div class="admin-header">
+            <h2>Gestión de usuarios</h2>
+            <div class="admin-subtitle" id="admin-subtitle"></div>
+          </div>
+          <div id="admin-users-list"></div>
+        </section>
+
         <!-- TARJETAS DE CRÉDITO -->
         <section id="view-cards" class="view hidden">
           <div class="cards-header">
@@ -254,6 +264,7 @@
         <button data-view="metrics"><span class="ic">📊</span>Métricas</button>
         <button data-view="cards"><span class="ic">💳</span>Tarjetas</button>
         <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>
+        <button class="admin-only hidden" data-view="admin"><span class="ic">🛡️</span>Admin</button>
       </nav>
     </div>
   </div>

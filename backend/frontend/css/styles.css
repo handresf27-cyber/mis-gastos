@@ -638,6 +638,40 @@ a { color: var(--accent); text-decoration: none; }
 .progress-fill { height: 100%; border-radius: 3px; transition: width .3s; }
 .progress-label { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
 
+/* ============================================================
+   ADMIN
+   ============================================================ */
+
+.admin-header { margin-bottom: 20px; }
+.admin-header h2 { margin: 0 0 4px; font-size: 18px; }
+.admin-subtitle { font-size: 13px; color: var(--text-muted); }
+
+.admin-user-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.admin-user-me { border-color: var(--accent); }
+.admin-user-info { flex: 1; min-width: 0; }
+.admin-user-name { font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.admin-user-email { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.admin-user-meta { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+
+.admin-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 20px; letter-spacing: .04em; text-transform: uppercase;
+}
+
+.btn-danger {
+  background: rgba(226,104,90,0.12); border: 1px solid rgba(226,104,90,0.3);
+  color: var(--negative); border-radius: 8px; padding: 6px 14px;
+  font-size: 13px; font-weight: 500; cursor: pointer; flex-shrink: 0;
+  transition: background .15s;
+}
+.btn-danger:hover { background: rgba(226,104,90,0.25); }
+
 /* Color picker de tarjetas */
 .color-picker { display: flex; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
 .color-dot {

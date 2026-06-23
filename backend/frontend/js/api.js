@@ -109,6 +109,13 @@ const Api = {
     return this.request(`/api/fixed-plans/copy-previous?year=${year}&month=${month}`, { method: "POST" });
   },
 
+  adminListUsers() {
+    return this.request("/api/admin/users");
+  },
+  adminDeleteUser(id) {
+    return this.request(`/api/admin/users/${id}`, { method: "DELETE" });
+  },
+
   listCreditCards() {
     return this.request("/api/credit-cards");
   },

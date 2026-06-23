@@ -75,6 +75,10 @@ function onLoggedIn(data) {
   document.getElementById("view-auth").classList.add("hidden");
   document.getElementById("shell").classList.remove("hidden");
   document.getElementById("sidebar-user").textContent = data.user.full_name || data.user.email;
+  // Mostrar botones de admin solo si el usuario es admin
+  document.querySelectorAll(".admin-only").forEach((el) => {
+    el.classList.toggle("hidden", !data.user.is_admin);
+  });
   bootstrapApp();
 }
 
@@ -99,7 +103,7 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
 
-  const titles = { home: "Inicio", metrics: "Métricas", cards: "Tarjetas de Crédito", categories: "Categorías" };
+  const titles = { home: "Inicio", metrics: "Métricas", cards: "Tarjetas de Crédito", categories: "Categorías", admin: "Administración" };
   document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
 
   // El navegador de meses solo aplica a vistas de home/metrics
@@ -109,6 +113,7 @@ function switchView(view) {
   if (view === "home") loadHome();
   if (view === "metrics") loadMetrics();
   if (view === "cards") loadCards();
+  if (view === "admin") loadAdmin();
   if (view === "categories") loadCategories();
 }
 
@@ -807,6 +812,50 @@ document.getElementById("balance-save").addEventListener("click", async () => {
   } catch (err) { showToast(err.message); }
 });
 
+
+// ============================================================
+// ADMINISTRACIÓN DE USUARIOS
+// ============================================================
+
+async function loadAdmin() {
+  if (!state.user?.is_admin) { switchView("home"); return; }
+  try {
+    const users = await Api.adminListUsers();
+    renderAdminUsers(users);
+  } catch (err) { showToast(err.message); }
+}
+
+function renderAdminUsers(users) {
+  const MONTH_NAMES_ES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  document.getElementById("admin-subtitle").textContent = `${users.length} usuario${users.length !== 1 ? "s" : ""} registrado${users.length !== 1 ? "s" : ""}`;
+
+  document.getElementById("admin-users-list").innerHTML = users.map((u) => {
+    const d = new Date(u.created_at);
+    const dateStr = `${d.getDate()} ${MONTH_NAMES_ES[d.getMonth()]} ${d.getFullYear()}`;
+    return `
+      <div class="admin-user-row ${u.is_admin ? "admin-user-me" : ""}">
+        <div class="admin-user-info">
+          <div class="admin-user-name">${escapeHtml(u.full_name || "—")} ${u.is_admin ? '<span class="admin-badge">Admin</span>' : ""}</div>
+          <div class="admin-user-email">${escapeHtml(u.email)}</div>
+          <div class="admin-user-meta">${u.transaction_count} movimientos · registrado ${dateStr}</div>
+        </div>
+        ${!u.is_admin ? `<button class="btn-danger admin-del-btn" data-uid="${u.id}" data-email="${escapeHtml(u.email)}">Eliminar</button>` : ""}
+      </div>`;
+  }).join("") || `<div class="fp-empty">Sin usuarios.</div>`;
+
+  document.querySelectorAll(".admin-del-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const uid = parseInt(btn.dataset.uid);
+      const email = btn.dataset.email;
+      if (!confirm(`¿Eliminar la cuenta de "${email}"?\nSe borrarán todos sus datos (movimientos, planes, tarjetas).`)) return;
+      try {
+        await Api.adminDeleteUser(uid);
+        showToast("Usuario eliminado");
+        loadAdmin();
+      } catch (err) { showToast(err.message); }
+    });
+  });
+}
 
 // ============================================================
 // TARJETAS DE CRÉDITO
