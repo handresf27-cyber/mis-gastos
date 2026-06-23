@@ -216,11 +216,35 @@ class CreditCardUpdate(BaseModel):
     color: Optional[str] = None
 
 
+class CreditPaymentCreate(BaseModel):
+    date: date
+    amount: float = Field(gt=0)
+    notes: Optional[str] = None
+
+
+class CreditPaymentUpdate(BaseModel):
+    date: Optional[date] = None
+    amount: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class CreditPaymentOut(BaseModel):
+    id: int
+    card_id: int
+    date: date
+    amount: float
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class CreditCardOut(BaseModel):
     id: int
     name: str
     color: str
     purchases: List[CreditPurchaseOut] = []
+    payments: List[CreditPaymentOut] = []
 
     class Config:
         from_attributes = True

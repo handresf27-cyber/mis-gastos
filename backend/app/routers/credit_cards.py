@@ -144,3 +144,61 @@ def delete_purchase(
     db.delete(purchase)
     db.commit()
     return {"ok": True}
+
+
+# ---- Payments ----
+
+@router.post("/{card_id}/payments", response_model=schemas.CreditPaymentOut)
+def create_payment(
+    card_id: int,
+    body: schemas.CreditPaymentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    payment = models.CreditPayment(**body.dict(), card_id=card_id)
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.put("/{card_id}/payments/{payment_id}", response_model=schemas.CreditPaymentOut)
+def update_payment(
+    card_id: int,
+    payment_id: int,
+    body: schemas.CreditPaymentUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    payment = db.query(models.CreditPayment).filter(
+        models.CreditPayment.id == payment_id,
+        models.CreditPayment.card_id == card_id,
+    ).first()
+    if not payment:
+        raise HTTPException(404, "Pago no encontrado")
+    for k, v in body.dict(exclude_unset=True).items():
+        setattr(payment, k, v)
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.delete("/{card_id}/payments/{payment_id}")
+def delete_payment(
+    card_id: int,
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    payment = db.query(models.CreditPayment).filter(
+        models.CreditPayment.id == payment_id,
+        models.CreditPayment.card_id == card_id,
+    ).first()
+    if not payment:
+        raise HTTPException(404, "Pago no encontrado")
+    db.delete(payment)
+    db.commit()
+    return {"ok": True}

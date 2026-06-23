@@ -246,9 +246,15 @@
         <!-- TARJETAS DE CRÉDITO -->
         <section id="view-cards" class="view hidden">
           <div class="cards-header">
-            <div>
-              <div class="cards-header-label">Cuota mensual total</div>
-              <div class="cards-header-total tabular" id="cards-total-monthly">$0</div>
+            <div class="cards-header-stats">
+              <div class="cards-stat">
+                <div class="cards-header-label">Cuota mensual estimada</div>
+                <div class="cards-header-total tabular" id="cards-total-monthly">$0</div>
+              </div>
+              <div class="cards-stat">
+                <div class="cards-header-label">Saldo total que debes</div>
+                <div class="cards-header-total tabular negative" id="cards-total-debt">$0</div>
+              </div>
             </div>
             <button class="btn btn-primary" id="add-card-btn">+ Nueva tarjeta</button>
           </div>
@@ -399,6 +405,35 @@
         <button type="button" class="btn btn-primary" id="fund-mov-save">Guardar</button>
       </div>
       <button type="button" class="btn-danger-text hidden" id="fund-mov-delete">Eliminar movimiento</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: registrar / editar pago de tarjeta ======= -->
+  <div id="modal-payment" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="payment-modal-title">Registrar pago</h3>
+        <button class="modal-close" id="payment-modal-close">&times;</button>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Valor pagado (COP)</label>
+          <input type="number" id="payment-amount" step="1" placeholder="0" min="1" />
+        </div>
+        <div class="field">
+          <label>Fecha del pago</label>
+          <input type="date" id="payment-date" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Notas (opcional)</label>
+        <input type="text" id="payment-notes" placeholder="Ej. Pago mínimo junio, Abono extra..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="payment-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="payment-modal-save">Guardar pago</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="payment-modal-delete">Eliminar pago</button>
     </div>
   </div>
 

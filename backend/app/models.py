@@ -162,6 +162,7 @@ class CreditCard(Base):
 
     owner = relationship("User", back_populates="credit_cards")
     purchases = relationship("CreditPurchase", back_populates="card", cascade="all, delete-orphan")
+    payments = relationship("CreditPayment", back_populates="card", cascade="all, delete-orphan")
 
 
 class CreditPurchase(Base):
@@ -179,3 +180,17 @@ class CreditPurchase(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     card = relationship("CreditCard", back_populates="purchases")
+
+
+class CreditPayment(Base):
+    """Pago real realizado a una tarjeta de crédito."""
+    __tablename__ = "credit_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    card_id = Column(Integer, ForeignKey("credit_cards.id"), nullable=False)
+    date = Column(Date, nullable=False, default=date.today)
+    amount = Column(Float, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    card = relationship("CreditCard", back_populates="payments")

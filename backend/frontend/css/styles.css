@@ -583,11 +583,13 @@ a { color: var(--accent); text-decoration: none; }
    ============================================================ */
 
 .cards-header {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  margin-bottom: 20px; gap: 12px;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px; flex-wrap: wrap;
 }
+.cards-header-stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.cards-stat { min-width: 130px; }
 .cards-header-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
-.cards-header-total { font-size: 26px; font-weight: 700; color: var(--text); font-family: var(--font-display); }
+.cards-header-total { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--font-display); }
 
 .credit-card-block {
   background: var(--surface); border-radius: var(--radius-md);
@@ -731,6 +733,41 @@ a { color: var(--accent); text-decoration: none; }
   transition: background .15s;
 }
 .btn-danger:hover { background: rgba(226,104,90,0.25); }
+
+/* Barra de balance por tarjeta */
+.card-balance-bar {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.card-balance-item {
+  padding: 10px 14px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.card-balance-item:last-child { border-right: none; }
+.card-balance-debt { background: rgba(226,104,90,0.04); }
+.card-balance-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
+.card-balance-val { font-size: 14px; font-weight: 700; margin-top: 2px; }
+
+.cc-section-label {
+  font-size: 11px; font-weight: 600; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 8px 16px 4px;
+}
+
+/* Filas de pagos */
+.payments-list { border-top: 1px solid var(--border); }
+.payment-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s;
+}
+.payment-row:last-child { border-bottom: none; }
+.payment-row:hover { background: var(--surface-hover); }
+.payment-icon { font-size: 16px; flex-shrink: 0; }
+.payment-info { flex: 1; min-width: 0; }
+.payment-desc { font-size: 13px; font-weight: 500; color: var(--text); }
+.payment-date { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.payment-amount { font-size: 14px; font-weight: 700; flex-shrink: 0; }
 
 /* Color picker de tarjetas */
 .color-picker { display: flex; gap: 10px; flex-wrap: wrap; padding: 4px 0; }

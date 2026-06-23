@@ -1137,48 +1137,67 @@ function purchaseStatus(p) {
 function renderCards(cards) {
   const list = document.getElementById("cards-list");
 
-  // total cuota mensual de todas las tarjetas (solo compras activas)
-  let grandTotal = 0;
+  // totales globales
+  let grandMonthly = 0, grandDebt = 0;
   cards.forEach((card) => {
+    const totalPurchases = card.purchases.reduce((s, p) => s + p.total_amount, 0);
+    const totalPaid = (card.payments || []).reduce((s, p) => s + p.amount, 0);
+    grandDebt += Math.max(0, totalPurchases - totalPaid);
     card.purchases.forEach((p) => {
       const s = purchaseStatus(p);
-      if (!s.finished) grandTotal += s.monthlyFee;
+      if (!s.finished) grandMonthly += s.monthlyFee;
     });
   });
-  document.getElementById("cards-total-monthly").textContent = cop(grandTotal);
+  document.getElementById("cards-total-monthly").textContent = cop(grandMonthly);
+  document.getElementById("cards-total-debt").textContent = cop(grandDebt);
 
   if (!cards.length) {
     list.innerHTML = `<div class="fp-empty" style="margin-top:24px;">No tienes tarjetas registradas.<br>Agrega tu primera con el botón arriba.</div>`;
     return;
   }
 
+  const MONTH_NAMES_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
   list.innerHTML = cards.map((card) => {
+    const payments = card.payments || [];
+    const totalPurchases = card.purchases.reduce((s, p) => s + p.total_amount, 0);
+    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+    const balanceDue = totalPurchases - totalPaid;
     const activePurchases = card.purchases.filter((p) => !purchaseStatus(p).finished);
     const cardMonthly = activePurchases.reduce((s, p) => s + purchaseStatus(p).monthlyFee, 0);
 
     const purchasesHtml = card.purchases.length
       ? card.purchases.map((p) => {
           const s = purchaseStatus(p);
-          const MONTH_NAMES_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
           const startLabel = `${MONTH_NAMES_SHORT[p.first_payment_month - 1]} ${p.first_payment_year}`;
           return `
             <div class="purchase-row${s.finished ? " purchase-done" : ""}" data-purchase-id="${p.id}" data-card-id="${card.id}">
               <div class="purchase-top">
                 <div class="purchase-desc">${escapeHtml(p.description)}</div>
-                <div class="purchase-fee tabular" style="color:${s.finished ? "var(--text-faint)" : card.color}">${s.finished ? "Terminada" : cop(s.monthlyFee) + "/mes"}</div>
+                <div class="purchase-fee tabular" style="color:${s.finished ? "var(--text-faint)" : card.color}">${s.finished ? "Pagada" : cop(s.monthlyFee) + "/mes"}</div>
               </div>
-              <div class="purchase-meta">
-                ${cop(p.total_amount)} · ${p.installments} cuota${p.installments > 1 ? "s" : ""} · desde ${startLabel}
-              </div>
+              <div class="purchase-meta">${cop(p.total_amount)} · ${p.installments} cuota${p.installments > 1 ? "s" : ""} · desde ${startLabel}</div>
               <div class="purchase-progress">
-                <div class="progress-bar">
-                  <div class="progress-fill" style="width:${s.pct}%;background:${card.color}"></div>
-                </div>
-                <div class="progress-label">${s.paid}/${p.installments} · ${s.finished ? "Pagada" : "Falta " + cop(s.remainingAmount)}</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:${s.pct}%;background:${card.color}"></div></div>
+                <div class="progress-label">${s.paid}/${p.installments} cuotas · ${s.finished ? "Terminada" : "Falta " + cop(s.remainingAmount)}</div>
               </div>
             </div>`;
         }).join("")
-      : `<div class="fp-empty">Sin compras registradas.</div>`;
+      : `<div class="fp-empty" style="padding:12px 16px;">Sin compras registradas.</div>`;
+
+    const paymentsHtml = payments.length
+      ? [...payments].sort((a, b) => b.date.localeCompare(a.date)).map((p) => `
+          <div class="payment-row" data-payment-id="${p.id}" data-card-id="${card.id}">
+            <div class="payment-icon">💳</div>
+            <div class="payment-info">
+              <div class="payment-desc">${p.notes ? escapeHtml(p.notes) : "Pago a tarjeta"}</div>
+              <div class="payment-date">${dateLabel(p.date)}</div>
+            </div>
+            <div class="payment-amount tabular positive">−${cop(p.amount)}</div>
+          </div>`).join("")
+      : "";
+
+    const debtColor = balanceDue > 0 ? "var(--negative)" : "var(--positive)";
 
     return `
       <div class="credit-card-block" id="card-block-${card.id}">
@@ -1186,29 +1205,53 @@ function renderCards(cards) {
           <div class="cc-chip" style="background:${card.color}"></div>
           <div class="cc-info">
             <div class="cc-name">${escapeHtml(card.name)}</div>
-            <div class="cc-monthly tabular">${cop(cardMonthly)}<span class="cc-monthly-label">/mes · ${activePurchases.length} compra${activePurchases.length !== 1 ? "s" : ""} activa${activePurchases.length !== 1 ? "s" : ""}</span></div>
+            <div class="cc-monthly tabular">${cop(cardMonthly)}<span class="cc-monthly-label">/mes estimado</span></div>
           </div>
           <div class="cc-actions">
+            <button class="btn-icon pay-card-btn" data-card-id="${card.id}" title="Registrar pago">💳</button>
             <button class="btn-icon add-purchase-btn" data-card-id="${card.id}" title="Agregar compra">+</button>
             <button class="btn-icon edit-card-btn" data-card-id="${card.id}" title="Editar tarjeta">✎</button>
           </div>
         </div>
+
+        <div class="card-balance-bar">
+          <div class="card-balance-item">
+            <div class="card-balance-label">Total compras</div>
+            <div class="card-balance-val tabular">${cop(totalPurchases)}</div>
+          </div>
+          <div class="card-balance-item">
+            <div class="card-balance-label">Total pagado</div>
+            <div class="card-balance-val tabular positive">−${cop(totalPaid)}</div>
+          </div>
+          <div class="card-balance-item card-balance-debt">
+            <div class="card-balance-label">Saldo que debes</div>
+            <div class="card-balance-val tabular" style="color:${debtColor}">${cop(Math.abs(balanceDue))}${balanceDue <= 0 ? " ✓" : ""}</div>
+          </div>
+        </div>
+
+        <div class="cc-section-label">Compras / cuotas</div>
         <div class="purchases-list">${purchasesHtml}</div>
+
+        ${payments.length ? `<div class="cc-section-label">Pagos realizados</div><div class="payments-list">${paymentsHtml}</div>` : ""}
       </div>`;
   }).join("");
 
-  // Listeners: agregar compra
-  list.querySelectorAll(".add-purchase-btn").forEach((btn) => {
-    btn.addEventListener("click", () => openPurchaseModal(parseInt(btn.dataset.cardId)));
-  });
-  // Listeners: editar tarjeta
-  list.querySelectorAll(".edit-card-btn").forEach((btn) => {
-    btn.addEventListener("click", () => openCardModal(parseInt(btn.dataset.cardId)));
-  });
-  // Listeners: editar compra
-  list.querySelectorAll(".purchase-row").forEach((row) => {
-    row.addEventListener("click", () => openPurchaseModal(parseInt(row.dataset.cardId), parseInt(row.dataset.purchaseId)));
-  });
+  // Listeners
+  list.querySelectorAll(".pay-card-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openPaymentModal(parseInt(btn.dataset.cardId)))
+  );
+  list.querySelectorAll(".add-purchase-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openPurchaseModal(parseInt(btn.dataset.cardId)))
+  );
+  list.querySelectorAll(".edit-card-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openCardModal(parseInt(btn.dataset.cardId)))
+  );
+  list.querySelectorAll(".purchase-row").forEach((row) =>
+    row.addEventListener("click", () => openPurchaseModal(parseInt(row.dataset.cardId), parseInt(row.dataset.purchaseId)))
+  );
+  list.querySelectorAll(".payment-row").forEach((row) =>
+    row.addEventListener("click", () => openPaymentModal(parseInt(row.dataset.cardId), parseInt(row.dataset.paymentId)))
+  );
 }
 
 async function loadCards() {
@@ -1220,6 +1263,58 @@ async function loadCards() {
     showToast(err.message);
   }
 }
+
+// ---- Modal de pago ----
+let _paymentCardId = null;
+let _editingPaymentId = null;
+
+function openPaymentModal(cardId, paymentId = null) {
+  _paymentCardId = cardId;
+  _editingPaymentId = paymentId;
+  const card = (state.creditCards || []).find(c => c.id === cardId);
+  const payment = paymentId ? (card?.payments || []).find(p => p.id === paymentId) : null;
+  document.getElementById("payment-modal-title").textContent =
+    payment ? `Editar pago — ${card?.name}` : `Registrar pago — ${card?.name}`;
+  document.getElementById("payment-amount").value = payment ? payment.amount : "";
+  document.getElementById("payment-date").value = payment ? payment.date : new Date().toISOString().slice(0, 10);
+  document.getElementById("payment-notes").value = payment ? (payment.notes || "") : "";
+  document.getElementById("payment-modal-delete").classList.toggle("hidden", !payment);
+  document.getElementById("modal-payment").classList.remove("hidden");
+  document.getElementById("payment-amount").focus();
+}
+
+function closePaymentModal() { document.getElementById("modal-payment").classList.add("hidden"); }
+
+document.getElementById("payment-modal-close").addEventListener("click", closePaymentModal);
+document.getElementById("payment-modal-cancel").addEventListener("click", closePaymentModal);
+
+document.getElementById("payment-modal-save").addEventListener("click", async () => {
+  const amount = parseFloat(document.getElementById("payment-amount").value);
+  const date = document.getElementById("payment-date").value;
+  const notes = document.getElementById("payment-notes").value.trim() || null;
+  if (!amount || amount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
+  if (!date) { showToast("Selecciona una fecha"); return; }
+  const body = { amount, date, notes };
+  try {
+    if (_editingPaymentId) {
+      await Api.updatePayment(_paymentCardId, _editingPaymentId, body);
+    } else {
+      await Api.createPayment(_paymentCardId, body);
+    }
+    closePaymentModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("payment-modal-delete").addEventListener("click", async () => {
+  if (!_editingPaymentId) return;
+  if (!confirm("¿Eliminar este pago?")) return;
+  try {
+    await Api.deletePayment(_paymentCardId, _editingPaymentId);
+    closePaymentModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
 
 // ---- Modal de tarjeta ----
 let _editingCardId = null;

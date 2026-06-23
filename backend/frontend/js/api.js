@@ -162,6 +162,15 @@ const Api = {
   deletePurchase(cardId, purchaseId) {
     return this.request(`/api/credit-cards/${cardId}/purchases/${purchaseId}`, { method: "DELETE" });
   },
+  createPayment(cardId, body) {
+    return this.request(`/api/credit-cards/${cardId}/payments`, { method: "POST", body });
+  },
+  updatePayment(cardId, paymentId, body) {
+    return this.request(`/api/credit-cards/${cardId}/payments/${paymentId}`, { method: "PUT", body });
+  },
+  deletePayment(cardId, paymentId) {
+    return this.request(`/api/credit-cards/${cardId}/payments/${paymentId}`, { method: "DELETE" });
+  },
 
   listCategories() {
     return this.request("/api/categories");
