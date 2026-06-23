@@ -172,6 +172,24 @@ const Api = {
     return this.request(`/api/credit-cards/${cardId}/payments/${paymentId}`, { method: "DELETE" });
   },
 
+  uploadReceipt(txId, file) {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch(`${API_BASE}/api/transactions/${txId}/receipt`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.token}` },
+      body: form,
+    }).then(async (res) => {
+      const data = await res.json().catch(() => null);
+      if (res.status === 401) { this.setToken(null); window.dispatchEvent(new Event("gastos:unauthorized")); throw new Error("Sesión expirada"); }
+      if (!res.ok) throw new Error((data && data.detail) || "Error al subir el archivo");
+      return data;
+    });
+  },
+  deleteReceipt(txId) {
+    return this.request(`/api/transactions/${txId}/receipt`, { method: "DELETE" });
+  },
+
   listCategories() {
     return this.request("/api/categories");
   },

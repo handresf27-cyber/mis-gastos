@@ -73,6 +73,7 @@ class TransactionOut(TransactionBase):
     id: int
     month: int
     year: int
+    receipt_url: Optional[str] = None
     created_at: datetime
 
     class Config:

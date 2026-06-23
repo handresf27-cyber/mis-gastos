@@ -337,6 +337,17 @@
           <label>Notas (opcional)</label>
           <input type="text" id="tx-notes" placeholder="Algún detalle adicional..." />
         </div>
+
+        <!-- Soporte: solo visible al editar una transacción existente -->
+        <div class="field" id="receipt-section" style="display:none">
+          <label>Soporte / Comprobante</label>
+          <div id="receipt-preview-area"></div>
+          <label class="receipt-upload-btn" id="receipt-upload-label">
+            <input type="file" id="receipt-file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+            <span id="receipt-upload-text">📎 Subir imagen o PDF (máx. 10 MB)</span>
+          </label>
+        </div>
+
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="modal-cancel">Cancelar</button>
           <button type="submit" class="btn btn-primary" id="modal-save">Guardar</button>
@@ -554,6 +565,15 @@
     </div>
   </div>
 
+</div>
+
+<!-- Lightbox para previsualizar imágenes de soporte -->
+<div id="lightbox" class="lightbox hidden">
+  <div class="lightbox-backdrop" id="lightbox-backdrop"></div>
+  <div class="lightbox-content">
+    <button class="lightbox-close" id="lightbox-close">✕</button>
+    <img id="lightbox-img" src="" alt="Soporte" />
+  </div>
 </div>
 
 <script src="js/vendor/chart.umd.js"></script>

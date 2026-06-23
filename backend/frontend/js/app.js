@@ -515,7 +515,7 @@ function renderTxList(txs, summary) {
           <div class="tx-icon">${TYPE_ICON[t.type]}</div>
           <div class="tx-info">
             <div class="tx-desc">${escapeHtml(t.description)}</div>
-            <div class="tx-meta">${escapeHtml(t.category || "Otros")}</div>
+            <div class="tx-meta">${escapeHtml(t.category || "Otros")}${t.receipt_url ? ' <span class="receipt-badge">📎</span>' : ''}</div>
             <div class="tx-running">Saldo: ${cop(runningMap[t.id])}</div>
           </div>
           <div class="tx-amount tabular${t.type === "income" ? " positive" : ""}">
@@ -725,6 +725,10 @@ function openTxModal(txId = null) {
   document.getElementById("tx-notes").value = (tx && tx.notes) || "";
   populateCategorySelect(tx ? tx.category : null);
 
+  // Soporte: visible solo al editar
+  document.getElementById("receipt-section").style.display = tx ? "" : "none";
+  if (tx) renderReceiptPreview(tx);
+
   modal.classList.remove("hidden");
 }
 
@@ -732,6 +736,9 @@ function closeTxModal() {
   modal.classList.add("hidden");
   formTx.reset();
   state.editingTxId = null;
+  document.getElementById("receipt-preview-area").innerHTML = "";
+  document.getElementById("receipt-upload-label").style.display = "";
+  document.getElementById("receipt-upload-text").textContent = "📎 Subir imagen o PDF (máx. 10 MB)";
 }
 
 function setTxType(type) {
@@ -849,6 +856,96 @@ document.getElementById("balance-save").addEventListener("click", async () => {
   } catch (err) { showToast(err.message); }
 });
 
+
+// ============================================================
+// SOPORTE / COMPROBANTE (receipt)
+// ============================================================
+
+function renderReceiptPreview(tx) {
+  const area = document.getElementById("receipt-preview-area");
+  const uploadLabel = document.getElementById("receipt-upload-label");
+  const uploadText = document.getElementById("receipt-upload-text");
+
+  if (!tx || !tx.receipt_url) {
+    area.innerHTML = "";
+    uploadLabel.style.display = "";
+    uploadText.textContent = "📎 Subir imagen o PDF (máx. 10 MB)";
+    return;
+  }
+
+  const url = tx.receipt_url;
+  const isPdf = /\.pdf(\?|$)/i.test(url) || url.includes("application/pdf");
+
+  if (isPdf) {
+    area.innerHTML = `
+      <div class="receipt-file-row">
+        <span class="receipt-icon">📄</span>
+        <span class="receipt-name">Comprobante PDF</span>
+        <a href="${url}" target="_blank" rel="noopener" class="btn-text receipt-view-btn">Ver PDF</a>
+        <button class="receipt-delete-btn" type="button">🗑 Eliminar</button>
+      </div>`;
+  } else {
+    area.innerHTML = `
+      <div class="receipt-file-row receipt-image-row">
+        <img src="${url}" class="receipt-thumb" alt="Soporte" />
+        <div class="receipt-image-actions">
+          <button class="btn-text receipt-view-btn" type="button">🔍 Ver imagen</button>
+          <button class="receipt-delete-btn" type="button">🗑 Eliminar</button>
+        </div>
+      </div>`;
+    area.querySelector(".receipt-thumb").addEventListener("click", () => openLightbox(url));
+    area.querySelector(".receipt-view-btn").addEventListener("click", () => openLightbox(url));
+  }
+
+  uploadLabel.style.display = "none";
+
+  area.querySelector(".receipt-delete-btn").addEventListener("click", async () => {
+    if (!state.editingTxId) return;
+    if (!confirm("¿Eliminar el soporte adjunto?")) return;
+    try {
+      const updated = await Api.deleteReceipt(state.editingTxId);
+      const idx = state.transactions.findIndex((t) => t.id === updated.id);
+      if (idx >= 0) state.transactions[idx] = updated;
+      renderReceiptPreview(updated);
+      showToast("Soporte eliminado");
+    } catch (err) { showToast(err.message); }
+  });
+}
+
+document.getElementById("receipt-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file || !state.editingTxId) return;
+
+  const textEl = document.getElementById("receipt-upload-text");
+  textEl.textContent = "Subiendo...";
+
+  try {
+    const updated = await Api.uploadReceipt(state.editingTxId, file);
+    const idx = state.transactions.findIndex((t) => t.id === updated.id);
+    if (idx >= 0) state.transactions[idx] = updated;
+    renderReceiptPreview(updated);
+    showToast("Soporte subido correctamente");
+  } catch (err) {
+    showToast(err.message);
+    textEl.textContent = "📎 Subir imagen o PDF (máx. 10 MB)";
+  }
+});
+
+// Lightbox para previsualizar imágenes
+function openLightbox(url) {
+  document.getElementById("lightbox-img").src = url;
+  document.getElementById("lightbox").classList.remove("hidden");
+}
+
+function closeLightbox() {
+  document.getElementById("lightbox").classList.add("hidden");
+  document.getElementById("lightbox-img").src = "";
+}
+
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+document.getElementById("lightbox-backdrop").addEventListener("click", closeLightbox);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
 
 // ============================================================
 // FONDOS ADMINISTRADOS

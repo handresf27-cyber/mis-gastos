@@ -1,0 +1,4792 @@
+================================================================
+CÓDIGO COMPLETO — MIS GASTOS APP
+Generado para uso en Claude Web
+================================================================
+
+================================================================
+ARCHIVO: backend/app/config.py
+================================================================
+import os
+import secrets
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./gastos.db")
+# Supabase y Heroku entregan "postgres://" pero SQLAlchemy requiere "postgresql://"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
+
+================================================================
+ARCHIVO: backend/app/database.py
+================================================================
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from .config import DATABASE_URL
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+================================================================
+ARCHIVO: backend/app/models.py
+================================================================
+import enum
+from datetime import datetime, date
+from sqlalchemy import (
+    Column, Integer, String, Float, Date, DateTime, ForeignKey, Enum, Boolean
+)
+from sqlalchemy.orm import relationship
+from .database import Base
+
+
+class TransactionType(str, enum.Enum):
+    income = "income"
+    deduction = "deduction"
+    fixed = "fixed"
+    variable = "variable"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    transactions = relationship("Transaction", back_populates="owner", cascade="all, delete-orphan")
+    categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
+    statements = relationship("MonthlyStatement", back_populates="owner", cascade="all, delete-orphan")
+    fixed_plans = relationship("FixedExpensePlan", back_populates="owner", cascade="all, delete-orphan")
+    credit_cards = relationship("CreditCard", back_populates="owner", cascade="all, delete-orphan")
+    funds = relationship("Fund", back_populates="owner", cascade="all, delete-orphan")
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    icon = Column(String, nullable=True)
+
+    owner = relationship("User", back_populates="categories")
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False, default=date.today)
+    description = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    type = Column(Enum(TransactionType), nullable=False, default=TransactionType.variable)
+    category = Column(String, nullable=True, default="Otros")
+    notes = Column(String, nullable=True)
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = relationship("User", back_populates="transactions")
+
+
+class FixedExpensePlan(Base):
+    __tablename__ = "fixed_expense_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    is_executed = Column(Boolean, default=False, nullable=False)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="fixed_plans")
+    transaction = relationship("Transaction", foreign_keys=[transaction_id])
+
+
+class MonthlyStatement(Base):
+    __tablename__ = "monthly_statements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    opening_balance = Column(Float, nullable=False, default=0.0)
+    actual_bank_balance = Column(Float, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = relationship("User", back_populates="statements")
+
+
+class Fund(Base):
+    __tablename__ = "funds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="funds")
+    movements = relationship("FundMovement", back_populates="fund",
+                             cascade="all, delete-orphan",
+                             order_by="FundMovement.date, FundMovement.id")
+
+
+class FundMovement(Base):
+    __tablename__ = "fund_movements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fund_id = Column(Integer, ForeignKey("funds.id"), nullable=False)
+    date = Column(Date, nullable=False, default=date.today)
+    amount = Column(Float, nullable=False)
+    move_type = Column(String, nullable=False, default="Otros")
+    description = Column(String, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    fund = relationship("Fund", back_populates="movements")
+
+
+class CreditCard(Base):
+    __tablename__ = "credit_cards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    color = Column(String, default="#6c8fc7", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="credit_cards")
+    purchases = relationship("CreditPurchase", back_populates="card", cascade="all, delete-orphan")
+    payments = relationship("CreditPayment", back_populates="card", cascade="all, delete-orphan")
+
+
+class CreditPurchase(Base):
+    __tablename__ = "credit_purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    card_id = Column(Integer, ForeignKey("credit_cards.id"), nullable=False)
+    description = Column(String, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    installments = Column(Integer, nullable=False, default=1)
+    first_payment_month = Column(Integer, nullable=False)
+    first_payment_year = Column(Integer, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    card = relationship("CreditCard", back_populates="purchases")
+
+
+class CreditPayment(Base):
+    __tablename__ = "credit_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    card_id = Column(Integer, ForeignKey("credit_cards.id"), nullable=False)
+    date = Column(Date, nullable=False, default=date.today)
+    amount = Column(Float, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    card = relationship("CreditCard", back_populates="payments")
+
+================================================================
+ARCHIVO: backend/app/schemas.py
+================================================================
+from datetime import date, datetime
+from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field
+from .models import TransactionType
+
+
+# ---------- Auth ----------
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
+    full_name: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    is_admin: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    created_at: datetime
+    transaction_count: int = 0
+    is_admin: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+# ---------- Transactions ----------
+
+class TransactionBase(BaseModel):
+    date: date
+    description: str
+    amount: float
+    type: TransactionType = TransactionType.variable
+    category: Optional[str] = "Otros"
+    notes: Optional[str] = None
+
+
+class TransactionCreate(TransactionBase):
+    pass
+
+
+class TransactionUpdate(BaseModel):
+    date: Optional[date] = None
+    description: Optional[str] = None
+    amount: Optional[float] = None
+    type: Optional[TransactionType] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TransactionOut(TransactionBase):
+    id: int
+    month: int
+    year: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Metrics ----------
+
+class MonthlySummary(BaseModel):
+    year: int
+    month: int
+    total_income: float
+    total_deduction: float
+    net_income: float
+    total_fixed: float
+    total_variable: float
+    total_expenses: float
+    balance: float
+    opening_balance: float
+    computed_balance: float
+    actual_bank_balance: Optional[float] = None
+    reconciliation_diff: Optional[float] = None
+    is_reconciled: Optional[bool] = None
+    transaction_count: int
+
+
+class StatementUpdate(BaseModel):
+    opening_balance: Optional[float] = None
+    actual_bank_balance: Optional[float] = None
+
+
+class StatementOut(BaseModel):
+    year: int
+    month: int
+    opening_balance: float
+    actual_bank_balance: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CategoryBreakdown(BaseModel):
+    category: str
+    total: float
+
+
+class MonthTrendPoint(BaseModel):
+    year: int
+    month: int
+    total_income: float
+    total_fixed: float
+    total_variable: float
+    total_expenses: float
+    balance: float
+
+
+# ---------- Fixed Expense Plans ----------
+
+class FixedPlanCreate(BaseModel):
+    name: str
+    amount: float
+    month: int
+    year: int
+
+
+class FixedPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[float] = None
+
+
+class FixedPlanOut(BaseModel):
+    id: int
+    name: str
+    amount: float
+    month: int
+    year: int
+    is_executed: bool
+    transaction_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Categories ----------
+
+class CategoryCreate(BaseModel):
+    name: str
+    icon: Optional[str] = None
+
+
+class CategoryOut(CategoryCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Credit Cards ----------
+
+class CreditPurchaseCreate(BaseModel):
+    description: str
+    total_amount: float = Field(gt=0)
+    installments: int = Field(ge=1, default=1)
+    first_payment_month: int = Field(ge=1, le=12)
+    first_payment_year: int
+    notes: Optional[str] = None
+
+
+class CreditPurchaseUpdate(BaseModel):
+    description: Optional[str] = None
+    total_amount: Optional[float] = None
+    installments: Optional[int] = None
+    first_payment_month: Optional[int] = None
+    first_payment_year: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class CreditPurchaseOut(BaseModel):
+    id: int
+    card_id: int
+    description: str
+    total_amount: float
+    installments: int
+    first_payment_month: int
+    first_payment_year: int
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CreditCardCreate(BaseModel):
+    name: str
+    color: str = "#6c8fc7"
+
+
+class CreditCardUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
+class CreditPaymentCreate(BaseModel):
+    date: date
+    amount: float = Field(gt=0)
+    notes: Optional[str] = None
+
+
+class CreditPaymentUpdate(BaseModel):
+    date: Optional[date] = None
+    amount: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class CreditPaymentOut(BaseModel):
+    id: int
+    card_id: int
+    date: date
+    amount: float
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CreditCardOut(BaseModel):
+    id: int
+    name: str
+    color: str
+    purchases: List[CreditPurchaseOut] = []
+    payments: List[CreditPaymentOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- Fondos administrados ----------
+
+class FundCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class FundUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class FundMovementCreate(BaseModel):
+    date: date
+    amount: float
+    move_type: str = "Otros"
+    description: str
+    notes: Optional[str] = None
+
+
+class FundMovementUpdate(BaseModel):
+    date: Optional[date] = None
+    amount: Optional[float] = None
+    move_type: Optional[str] = None
+    description: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FundMovementOut(BaseModel):
+    id: int
+    fund_id: int
+    date: date
+    amount: float
+    move_type: str
+    description: str
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FundOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    balance: float = 0.0
+    movements: List[FundMovementOut] = []
+
+    class Config:
+        from_attributes = True
+
+================================================================
+ARCHIVO: backend/app/auth.py
+================================================================
+import os
+from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+
+from . import models
+from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from .database import get_db
+
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "handresf27@gmail.com")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> models.User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudo validar la sesión, inicia sesión de nuevo",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+def get_current_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if current_user.email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Se requieren permisos de administrador")
+    return current_user
+
+================================================================
+ARCHIVO: backend/app/main.py
+================================================================
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from . import models
+from .database import engine
+from .routers import auth, transactions, metrics, categories, statement, fixed_plans, credit_cards, admin, funds
+
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Mis Gastos API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth.router)
+app.include_router(transactions.router)
+app.include_router(metrics.router)
+app.include_router(categories.router)
+app.include_router(statement.router)
+app.include_router(fixed_plans.router)
+app.include_router(credit_cards.router)
+app.include_router(admin.router)
+app.include_router(funds.router)
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+================================================================
+ARCHIVO: backend/app/routers/auth.py
+================================================================
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@router.post("/register", response_model=schemas.Token)
+def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.email == user_in.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ese correo ya está registrado")
+
+    user = models.User(
+        email=user_in.email,
+        hashed_password=auth.hash_password(user_in.password),
+        full_name=user_in.full_name,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = auth.create_access_token({"sub": str(user.id)})
+    user_out = _user_out(user)
+    return schemas.Token(access_token=token, user=user_out)
+
+
+@router.post("/login", response_model=schemas.Token)
+def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == credentials.email).first()
+    if not user or not auth.verify_password(credentials.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Correo o contraseña incorrectos",
+        )
+
+    token = auth.create_access_token({"sub": str(user.id)})
+    user_out = _user_out(user)
+    return schemas.Token(access_token=token, user=user_out)
+
+
+@router.get("/me", response_model=schemas.UserOut)
+def me(current_user: models.User = Depends(auth.get_current_user)):
+    return _user_out(current_user)
+
+
+def _user_out(user: models.User) -> schemas.UserOut:
+    return schemas.UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        is_admin=(user.email == auth.ADMIN_EMAIL),
+    )
+
+================================================================
+ARCHIVO: backend/app/routers/transactions.py
+================================================================
+from datetime import date
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+T = models.TransactionType
+
+router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+
+@router.get("", response_model=List[schemas.TransactionOut])
+def list_transactions(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    type: Optional[models.TransactionType] = None,
+    category: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    query = db.query(models.Transaction).filter(models.Transaction.user_id == current_user.id)
+    if year is not None:
+        query = query.filter(models.Transaction.year == year)
+    if month is not None:
+        query = query.filter(models.Transaction.month == month)
+    if type is not None:
+        query = query.filter(models.Transaction.type == type)
+    if category is not None:
+        query = query.filter(models.Transaction.category == category)
+    return query.order_by(models.Transaction.date.desc(), models.Transaction.id.desc()).all()
+
+
+@router.post("", response_model=schemas.TransactionOut)
+def create_transaction(
+    tx_in: schemas.TransactionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    tx = models.Transaction(
+        **tx_in.dict(),
+        user_id=current_user.id,
+        month=tx_in.date.month,
+        year=tx_in.date.year,
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
+@router.put("/{tx_id}", response_model=schemas.TransactionOut)
+def update_transaction(
+    tx_id: int,
+    tx_in: schemas.TransactionUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    tx = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.id == tx_id, models.Transaction.user_id == current_user.id)
+        .first()
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    data = tx_in.dict(exclude_unset=True)
+    for field, value in data.items():
+        setattr(tx, field, value)
+    if "date" in data:
+        tx.month = tx.date.month
+        tx.year = tx.date.year
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
+@router.delete("/{tx_id}")
+def delete_transaction(
+    tx_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    tx = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.id == tx_id, models.Transaction.user_id == current_user.id)
+        .first()
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    db.delete(tx)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/copy-payroll", response_model=List[schemas.TransactionOut])
+def copy_payroll(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    existing = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.year == year,
+        models.Transaction.month == month,
+        models.Transaction.type.in_([T.income, T.deduction]),
+    ).count()
+    if existing > 0:
+        raise HTTPException(400, "Este mes ya tiene nómina registrada")
+
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    prev_txs = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.year == prev_year,
+        models.Transaction.month == prev_month,
+        models.Transaction.type.in_([T.income, T.deduction]),
+    ).all()
+
+    if not prev_txs:
+        raise HTTPException(404, "No hay nómina en el mes anterior para copiar")
+
+    new_txs = []
+    for t in prev_txs:
+        new_tx = models.Transaction(
+            user_id=current_user.id,
+            description=t.description,
+            amount=t.amount,
+            type=t.type,
+            category=t.category,
+            month=month,
+            year=year,
+            date=date(year, month, 1),
+            notes="[copiado-de-plantilla]",
+        )
+        db.add(new_tx)
+        new_txs.append(new_tx)
+
+    db.commit()
+    for tx in new_txs:
+        db.refresh(tx)
+    return new_txs
+
+
+@router.get("/months/available")
+def available_months(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    rows = (
+        db.query(models.Transaction.year, models.Transaction.month)
+        .filter(models.Transaction.user_id == current_user.id)
+        .distinct()
+        .order_by(models.Transaction.year.desc(), models.Transaction.month.desc())
+        .all()
+    )
+    return [{"year": y, "month": m} for y, m in rows]
+
+================================================================
+ARCHIVO: backend/app/routers/fixed_plans.py
+================================================================
+from datetime import date
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..auth import get_current_user
+from .. import models, schemas
+
+router = APIRouter(prefix="/api/fixed-plans", tags=["fixed-plans"])
+
+
+@router.get("", response_model=List[schemas.FixedPlanOut])
+def list_plans(year: int, month: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return (
+        db.query(models.FixedExpensePlan)
+        .filter(
+            models.FixedExpensePlan.user_id == user.id,
+            models.FixedExpensePlan.year == year,
+            models.FixedExpensePlan.month == month,
+        )
+        .order_by(models.FixedExpensePlan.created_at)
+        .all()
+    )
+
+
+@router.post("", response_model=schemas.FixedPlanOut)
+def create_plan(body: schemas.FixedPlanCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    plan = models.FixedExpensePlan(user_id=user.id, **body.model_dump())
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@router.patch("/{plan_id}", response_model=schemas.FixedPlanOut)
+def update_plan(plan_id: int, body: schemas.FixedPlanUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    plan = db.query(models.FixedExpensePlan).filter(
+        models.FixedExpensePlan.id == plan_id,
+        models.FixedExpensePlan.user_id == user.id,
+    ).first()
+    if not plan:
+        raise HTTPException(404, "Plan no encontrado")
+    updates = body.model_dump(exclude_none=True)
+    for k, v in updates.items():
+        setattr(plan, k, v)
+    if plan.transaction_id:
+        tx = db.get(models.Transaction, plan.transaction_id)
+        if tx:
+            if "name" in updates:
+                tx.description = updates["name"]
+            if "amount" in updates:
+                tx.amount = updates["amount"]
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@router.patch("/{plan_id}/toggle", response_model=schemas.FixedPlanOut)
+def toggle_executed(plan_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    plan = db.query(models.FixedExpensePlan).filter(
+        models.FixedExpensePlan.id == plan_id,
+        models.FixedExpensePlan.user_id == user.id,
+    ).first()
+    if not plan:
+        raise HTTPException(404, "Plan no encontrado")
+
+    if not plan.is_executed:
+        tx_date = date.today() if (date.today().year == plan.year and date.today().month == plan.month) else date(plan.year, plan.month, 1)
+        tx = models.Transaction(
+            user_id=user.id,
+            description=plan.name,
+            amount=plan.amount,
+            type=models.TransactionType.fixed,
+            category="Gasto fijo",
+            month=plan.month,
+            year=plan.year,
+            date=tx_date,
+            notes="[plan-fijo]",
+        )
+        db.add(tx)
+        db.flush()
+        plan.transaction_id = tx.id
+        plan.is_executed = True
+    else:
+        if plan.transaction_id:
+            tx = db.get(models.Transaction, plan.transaction_id)
+            if tx:
+                db.delete(tx)
+        plan.transaction_id = None
+        plan.is_executed = False
+
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@router.delete("/{plan_id}")
+def delete_plan(plan_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    plan = db.query(models.FixedExpensePlan).filter(
+        models.FixedExpensePlan.id == plan_id,
+        models.FixedExpensePlan.user_id == user.id,
+    ).first()
+    if not plan:
+        raise HTTPException(404, "Plan no encontrado")
+    if plan.transaction_id:
+        tx = db.get(models.Transaction, plan.transaction_id)
+        if tx:
+            db.delete(tx)
+    db.delete(plan)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/copy-previous", response_model=List[schemas.FixedPlanOut])
+def copy_from_previous(year: int, month: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+
+    existing = db.query(models.FixedExpensePlan).filter(
+        models.FixedExpensePlan.user_id == user.id,
+        models.FixedExpensePlan.year == year,
+        models.FixedExpensePlan.month == month,
+    ).count()
+    if existing > 0:
+        raise HTTPException(400, "Este mes ya tiene gastos fijos configurados.")
+
+    prev_plans = db.query(models.FixedExpensePlan).filter(
+        models.FixedExpensePlan.user_id == user.id,
+        models.FixedExpensePlan.year == prev_year,
+        models.FixedExpensePlan.month == prev_month,
+    ).all()
+
+    if not prev_plans:
+        raise HTTPException(404, "No hay gastos fijos en el mes anterior para copiar.")
+
+    new_plans = []
+    for p in prev_plans:
+        new_p = models.FixedExpensePlan(
+            user_id=user.id,
+            name=p.name,
+            amount=p.amount,
+            month=month,
+            year=year,
+            is_executed=False,
+        )
+        db.add(new_p)
+        new_plans.append(new_p)
+
+    db.commit()
+    for p in new_plans:
+        db.refresh(p)
+    return new_plans
+
+================================================================
+ARCHIVO: backend/app/routers/metrics.py
+================================================================
+from typing import List
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/metrics", tags=["metrics"])
+
+T = models.TransactionType
+
+
+def _totals_for(db: Session, user_id: int, year: int, month: int = None):
+    query = db.query(models.Transaction).filter(
+        models.Transaction.user_id == user_id, models.Transaction.year == year
+    )
+    if month is not None:
+        query = query.filter(models.Transaction.month == month)
+    rows = query.all()
+
+    income = sum(t.amount for t in rows if t.type == T.income)
+    deduction = sum(t.amount for t in rows if t.type == T.deduction)
+    fixed = sum(t.amount for t in rows if t.type == T.fixed)
+    variable = sum(t.amount for t in rows if t.type == T.variable)
+    return income, deduction, fixed, variable, len(rows)
+
+
+def _get_statement(db, user_id, year, month):
+    return (
+        db.query(models.MonthlyStatement)
+        .filter(
+            models.MonthlyStatement.user_id == user_id,
+            models.MonthlyStatement.year == year,
+            models.MonthlyStatement.month == month,
+        )
+        .first()
+    )
+
+
+@router.get("/summary", response_model=schemas.MonthlySummary)
+def monthly_summary(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    income, deduction, fixed, variable, count = _totals_for(db, current_user.id, year, month)
+    net_income = income - deduction
+    total_expenses = fixed + variable
+    balance = net_income - total_expenses
+
+    stmt = _get_statement(db, current_user.id, year, month)
+    opening = stmt.opening_balance if stmt else 0.0
+    actual = stmt.actual_bank_balance if stmt else None
+
+    computed = opening + net_income - total_expenses
+
+    diff = None
+    reconciled = None
+    if actual is not None:
+        diff = actual - computed
+        reconciled = abs(diff) < 1.0
+
+    return schemas.MonthlySummary(
+        year=year, month=month,
+        total_income=income, total_deduction=deduction, net_income=net_income,
+        total_fixed=fixed, total_variable=variable, total_expenses=total_expenses,
+        balance=balance, opening_balance=opening, computed_balance=computed,
+        actual_bank_balance=actual, reconciliation_diff=diff, is_reconciled=reconciled,
+        transaction_count=count,
+    )
+
+
+@router.get("/categories", response_model=List[schemas.CategoryBreakdown])
+def category_breakdown(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    rows = (
+        db.query(models.Transaction.category, func.sum(models.Transaction.amount))
+        .filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.year == year,
+            models.Transaction.month == month,
+            models.Transaction.type.in_([T.fixed, T.variable]),
+        )
+        .group_by(models.Transaction.category)
+        .order_by(func.sum(models.Transaction.amount).desc())
+        .all()
+    )
+    return [schemas.CategoryBreakdown(category=c or "Otros", total=t) for c, t in rows if t and t > 0]
+
+
+@router.get("/trend", response_model=List[schemas.MonthTrendPoint])
+def yearly_trend(
+    year: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    points = []
+    for month in range(1, 13):
+        income, deduction, fixed, variable, count = _totals_for(db, current_user.id, year, month)
+        if count == 0:
+            continue
+        net_income = income - deduction
+        points.append(
+            schemas.MonthTrendPoint(
+                year=year, month=month,
+                total_income=net_income,
+                total_fixed=fixed,
+                total_variable=variable,
+                total_expenses=fixed + variable,
+                balance=net_income - fixed - variable,
+            )
+        )
+    return points
+
+================================================================
+ARCHIVO: backend/app/routers/statement.py
+================================================================
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/statement", tags=["statement"])
+
+
+def _get_or_create(db, user_id, year, month):
+    stmt = (
+        db.query(models.MonthlyStatement)
+        .filter(
+            models.MonthlyStatement.user_id == user_id,
+            models.MonthlyStatement.year == year,
+            models.MonthlyStatement.month == month,
+        )
+        .first()
+    )
+    if not stmt:
+        stmt = models.MonthlyStatement(user_id=user_id, year=year, month=month, opening_balance=0.0)
+        db.add(stmt)
+        db.commit()
+        db.refresh(stmt)
+    return stmt
+
+
+@router.get("", response_model=schemas.StatementOut)
+def get_statement(
+    year: int, month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    return _get_or_create(db, current_user.id, year, month)
+
+
+@router.put("", response_model=schemas.StatementOut)
+def update_statement(
+    year: int, month: int,
+    data: schemas.StatementUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    stmt = _get_or_create(db, current_user.id, year, month)
+    if data.opening_balance is not None:
+        stmt.opening_balance = data.opening_balance
+    if data.actual_bank_balance is not None:
+        stmt.actual_bank_balance = data.actual_bank_balance
+    db.commit()
+    db.refresh(stmt)
+    return stmt
+
+
+@router.get("/previous-closing")
+def previous_closing(
+    year: int, month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    rows = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.year == prev_year,
+            models.Transaction.month == prev_month,
+        )
+        .all()
+    )
+    T = models.TransactionType
+    income = sum(t.amount for t in rows if t.type == T.income)
+    deduction = sum(t.amount for t in rows if t.type == T.deduction)
+    expenses = sum(t.amount for t in rows if t.type in (T.fixed, T.variable))
+
+    prev_stmt = (
+        db.query(models.MonthlyStatement)
+        .filter(
+            models.MonthlyStatement.user_id == current_user.id,
+            models.MonthlyStatement.year == prev_year,
+            models.MonthlyStatement.month == prev_month,
+        )
+        .first()
+    )
+    prev_opening = prev_stmt.opening_balance if prev_stmt else 0.0
+    if prev_stmt and prev_stmt.actual_bank_balance is not None:
+        closing = prev_stmt.actual_bank_balance
+    else:
+        closing = prev_opening + (income - deduction) - expenses
+
+    return {"year": prev_year, "month": prev_month, "closing_balance": closing}
+
+================================================================
+ARCHIVO: backend/app/routers/categories.py
+================================================================
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/categories", tags=["categories"])
+
+DEFAULT_CATEGORIES = [
+    "Mercado", "Comida fuera", "Transporte", "Salud", "Hogar",
+    "Servicios", "Entretenimiento", "Deudas", "Ahorro", "Familia", "Otros",
+]
+
+
+@router.get("", response_model=List[schemas.CategoryOut])
+def list_categories(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    cats = db.query(models.Category).filter(models.Category.user_id == current_user.id).all()
+    if not cats:
+        for name in DEFAULT_CATEGORIES:
+            cat = models.Category(user_id=current_user.id, name=name)
+            db.add(cat)
+        db.commit()
+        cats = db.query(models.Category).filter(models.Category.user_id == current_user.id).all()
+    return cats
+
+
+@router.post("", response_model=schemas.CategoryOut)
+def create_category(
+    cat_in: schemas.CategoryCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    cat = models.Category(user_id=current_user.id, **cat_in.dict())
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return cat
+
+
+@router.delete("/{cat_id}")
+def delete_category(
+    cat_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    cat = (
+        db.query(models.Category)
+        .filter(models.Category.id == cat_id, models.Category.user_id == current_user.id)
+        .first()
+    )
+    if not cat:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    db.delete(cat)
+    db.commit()
+    return {"ok": True}
+
+================================================================
+ARCHIVO: backend/app/routers/credit_cards.py
+================================================================
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/credit-cards", tags=["credit-cards"])
+
+
+def _get_card(card_id: int, user_id: int, db: Session) -> models.CreditCard:
+    card = db.query(models.CreditCard).filter(
+        models.CreditCard.id == card_id,
+        models.CreditCard.user_id == user_id,
+    ).first()
+    if not card:
+        raise HTTPException(404, "Tarjeta no encontrada")
+    return card
+
+
+@router.get("", response_model=List[schemas.CreditCardOut])
+def list_cards(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    return (
+        db.query(models.CreditCard)
+        .filter(models.CreditCard.user_id == current_user.id)
+        .order_by(models.CreditCard.created_at)
+        .all()
+    )
+
+
+@router.post("", response_model=schemas.CreditCardOut)
+def create_card(
+    body: schemas.CreditCardCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    card = models.CreditCard(**body.dict(), user_id=current_user.id)
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.put("/{card_id}", response_model=schemas.CreditCardOut)
+def update_card(
+    card_id: int,
+    body: schemas.CreditCardUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    card = _get_card(card_id, current_user.id, db)
+    for k, v in body.dict(exclude_unset=True).items():
+        setattr(card, k, v)
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.delete("/{card_id}")
+def delete_card(
+    card_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    card = _get_card(card_id, current_user.id, db)
+    db.delete(card)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/{card_id}/purchases", response_model=List[schemas.CreditPurchaseOut])
+def list_purchases(
+    card_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    return (
+        db.query(models.CreditPurchase)
+        .filter(models.CreditPurchase.card_id == card_id)
+        .order_by(models.CreditPurchase.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/{card_id}/purchases", response_model=schemas.CreditPurchaseOut)
+def create_purchase(
+    card_id: int,
+    body: schemas.CreditPurchaseCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    purchase = models.CreditPurchase(**body.dict(), card_id=card_id)
+    db.add(purchase)
+    db.commit()
+    db.refresh(purchase)
+    return purchase
+
+
+@router.put("/{card_id}/purchases/{purchase_id}", response_model=schemas.CreditPurchaseOut)
+def update_purchase(
+    card_id: int,
+    purchase_id: int,
+    body: schemas.CreditPurchaseUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    purchase = db.query(models.CreditPurchase).filter(
+        models.CreditPurchase.id == purchase_id,
+        models.CreditPurchase.card_id == card_id,
+    ).first()
+    if not purchase:
+        raise HTTPException(404, "Compra no encontrada")
+    for k, v in body.dict(exclude_unset=True).items():
+        setattr(purchase, k, v)
+    db.commit()
+    db.refresh(purchase)
+    return purchase
+
+
+@router.delete("/{card_id}/purchases/{purchase_id}")
+def delete_purchase(
+    card_id: int,
+    purchase_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    purchase = db.query(models.CreditPurchase).filter(
+        models.CreditPurchase.id == purchase_id,
+        models.CreditPurchase.card_id == card_id,
+    ).first()
+    if not purchase:
+        raise HTTPException(404, "Compra no encontrada")
+    db.delete(purchase)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{card_id}/payments", response_model=schemas.CreditPaymentOut)
+def create_payment(
+    card_id: int,
+    body: schemas.CreditPaymentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    payment = models.CreditPayment(**body.dict(), card_id=card_id)
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.put("/{card_id}/payments/{payment_id}", response_model=schemas.CreditPaymentOut)
+def update_payment(
+    card_id: int,
+    payment_id: int,
+    body: schemas.CreditPaymentUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    payment = db.query(models.CreditPayment).filter(
+        models.CreditPayment.id == payment_id,
+        models.CreditPayment.card_id == card_id,
+    ).first()
+    if not payment:
+        raise HTTPException(404, "Pago no encontrado")
+    for k, v in body.dict(exclude_unset=True).items():
+        setattr(payment, k, v)
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.delete("/{card_id}/payments/{payment_id}")
+def delete_payment(
+    card_id: int,
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_card(card_id, current_user.id, db)
+    payment = db.query(models.CreditPayment).filter(
+        models.CreditPayment.id == payment_id,
+        models.CreditPayment.card_id == card_id,
+    ).first()
+    if not payment:
+        raise HTTPException(404, "Pago no encontrado")
+    db.delete(payment)
+    db.commit()
+    return {"ok": True}
+
+================================================================
+ARCHIVO: backend/app/routers/admin.py
+================================================================
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+@router.get("/users", response_model=List[schemas.AdminUserOut])
+def list_users(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(auth.get_current_admin),
+):
+    users = db.query(models.User).order_by(models.User.created_at).all()
+    result = []
+    for u in users:
+        tx_count = db.query(models.Transaction).filter(models.Transaction.user_id == u.id).count()
+        result.append(schemas.AdminUserOut(
+            id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            created_at=u.created_at,
+            transaction_count=tx_count,
+            is_admin=(u.email == auth.ADMIN_EMAIL),
+        ))
+    return result
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(auth.get_current_admin),
+):
+    if user_id == current_admin.id:
+        raise HTTPException(400, "No puedes eliminar tu propia cuenta desde aquí")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "Usuario no encontrado")
+    db.delete(user)
+    db.commit()
+    return {"ok": True}
+
+================================================================
+ARCHIVO: backend/app/routers/funds.py
+================================================================
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from .. import models, schemas, auth
+from ..database import get_db
+
+router = APIRouter(prefix="/api/funds", tags=["funds"])
+
+
+def _get_fund(fund_id: int, user_id: int, db: Session) -> models.Fund:
+    fund = db.query(models.Fund).filter(
+        models.Fund.id == fund_id,
+        models.Fund.user_id == user_id,
+    ).first()
+    if not fund:
+        raise HTTPException(404, "Fondo no encontrado")
+    return fund
+
+
+def _fund_out(fund: models.Fund) -> schemas.FundOut:
+    balance = sum(m.amount for m in fund.movements)
+    return schemas.FundOut(
+        id=fund.id,
+        name=fund.name,
+        description=fund.description,
+        balance=balance,
+        movements=fund.movements,
+    )
+
+
+@router.get("", response_model=List[schemas.FundOut])
+def list_funds(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    funds = (
+        db.query(models.Fund)
+        .filter(models.Fund.user_id == current_user.id)
+        .order_by(models.Fund.created_at)
+        .all()
+    )
+    return [_fund_out(f) for f in funds]
+
+
+@router.post("", response_model=schemas.FundOut)
+def create_fund(
+    body: schemas.FundCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    fund = models.Fund(**body.dict(), user_id=current_user.id)
+    db.add(fund)
+    db.commit()
+    db.refresh(fund)
+    return _fund_out(fund)
+
+
+@router.put("/{fund_id}", response_model=schemas.FundOut)
+def update_fund(
+    fund_id: int,
+    body: schemas.FundUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    fund = _get_fund(fund_id, current_user.id, db)
+    for k, v in body.dict(exclude_unset=True).items():
+        setattr(fund, k, v)
+    db.commit()
+    db.refresh(fund)
+    return _fund_out(fund)
+
+
+@router.delete("/{fund_id}")
+def delete_fund(
+    fund_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    fund = _get_fund(fund_id, current_user.id, db)
+    db.delete(fund)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{fund_id}/movements", response_model=schemas.FundMovementOut)
+def add_movement(
+    fund_id: int,
+    body: schemas.FundMovementCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_fund(fund_id, current_user.id, db)
+    mov = models.FundMovement(**body.dict(), fund_id=fund_id)
+    db.add(mov)
+    db.commit()
+    db.refresh(mov)
+    return mov
+
+
+@router.put("/{fund_id}/movements/{movement_id}", response_model=schemas.FundMovementOut)
+def update_movement(
+    fund_id: int,
+    movement_id: int,
+    body: schemas.FundMovementUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_fund(fund_id, current_user.id, db)
+    mov = db.query(models.FundMovement).filter(
+        models.FundMovement.id == movement_id,
+        models.FundMovement.fund_id == fund_id,
+    ).first()
+    if not mov:
+        raise HTTPException(404, "Movimiento no encontrado")
+    for k, v in body.dict(exclude_unset=True).items():
+        setattr(mov, k, v)
+    db.commit()
+    db.refresh(mov)
+    return mov
+
+
+@router.delete("/{fund_id}/movements/{movement_id}")
+def delete_movement(
+    fund_id: int,
+    movement_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    _get_fund(fund_id, current_user.id, db)
+    mov = db.query(models.FundMovement).filter(
+        models.FundMovement.id == movement_id,
+        models.FundMovement.fund_id == fund_id,
+    ).first()
+    if not mov:
+        raise HTTPException(404, "Movimiento no encontrado")
+    db.delete(mov)
+    db.commit()
+    return {"ok": True}
+
+================================================================
+ARCHIVO: backend/frontend/js/api.js
+================================================================
+const API_BASE = (() => {
+  if (window.location.protocol === "file:") return "http://127.0.0.1:8000";
+  return window.location.origin;
+})();
+
+const Api = {
+  token: localStorage.getItem("gastos_token") || null,
+
+  setToken(t) {
+    this.token = t;
+    if (t) localStorage.setItem("gastos_token", t);
+    else localStorage.removeItem("gastos_token");
+  },
+
+  async request(path, { method = "GET", body = null } = {}) {
+    const headers = { "Content-Type": "application/json" };
+    if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
+
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : null,
+    });
+
+    if (res.status === 401) {
+      this.setToken(null);
+      window.dispatchEvent(new Event("gastos:unauthorized"));
+      throw new Error("Sesión expirada");
+    }
+
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+
+    if (!res.ok) {
+      const msg = (data && data.detail) || "Algo salió mal, intenta de nuevo";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  register(email, password, full_name) {
+    return this.request("/api/auth/register", { method: "POST", body: { email, password, full_name } });
+  },
+  login(email, password) {
+    return this.request("/api/auth/login", { method: "POST", body: { email, password } });
+  },
+  me() {
+    return this.request("/api/auth/me");
+  },
+
+  listTransactions(year, month) {
+    return this.request(`/api/transactions?year=${year}&month=${month}`);
+  },
+  createTransaction(tx) {
+    return this.request("/api/transactions", { method: "POST", body: tx });
+  },
+  updateTransaction(id, tx) {
+    return this.request(`/api/transactions/${id}`, { method: "PUT", body: tx });
+  },
+  deleteTransaction(id) {
+    return this.request(`/api/transactions/${id}`, { method: "DELETE" });
+  },
+  availableMonths() {
+    return this.request("/api/transactions/months/available");
+  },
+  copyPayroll(year, month) {
+    return this.request(`/api/transactions/copy-payroll?year=${year}&month=${month}`, { method: "POST" });
+  },
+
+  summary(year, month) {
+    return this.request(`/api/metrics/summary?year=${year}&month=${month}`);
+  },
+  categoryBreakdown(year, month) {
+    return this.request(`/api/metrics/categories?year=${year}&month=${month}`);
+  },
+  yearlyTrend(year) {
+    return this.request(`/api/metrics/trend?year=${year}`);
+  },
+
+  getStatement(year, month) {
+    return this.request(`/api/statement?year=${year}&month=${month}`);
+  },
+  updateStatement(year, month, data) {
+    return this.request(`/api/statement?year=${year}&month=${month}`, { method: "PUT", body: data });
+  },
+  previousClosing(year, month) {
+    return this.request(`/api/statement/previous-closing?year=${year}&month=${month}`);
+  },
+
+  listFixedPlans(year, month) {
+    return this.request(`/api/fixed-plans?year=${year}&month=${month}`);
+  },
+  createFixedPlan(body) {
+    return this.request("/api/fixed-plans", { method: "POST", body });
+  },
+  updateFixedPlan(id, body) {
+    return this.request(`/api/fixed-plans/${id}`, { method: "PATCH", body });
+  },
+  toggleFixedPlan(id) {
+    return this.request(`/api/fixed-plans/${id}/toggle`, { method: "PATCH" });
+  },
+  deleteFixedPlan(id) {
+    return this.request(`/api/fixed-plans/${id}`, { method: "DELETE" });
+  },
+  copyPreviousPlans(year, month) {
+    return this.request(`/api/fixed-plans/copy-previous?year=${year}&month=${month}`, { method: "POST" });
+  },
+
+  listFunds() {
+    return this.request("/api/funds");
+  },
+  createFund(body) {
+    return this.request("/api/funds", { method: "POST", body });
+  },
+  updateFund(id, body) {
+    return this.request(`/api/funds/${id}`, { method: "PUT", body });
+  },
+  deleteFund(id) {
+    return this.request(`/api/funds/${id}`, { method: "DELETE" });
+  },
+  addFundMovement(fundId, body) {
+    return this.request(`/api/funds/${fundId}/movements`, { method: "POST", body });
+  },
+  updateFundMovement(fundId, movId, body) {
+    return this.request(`/api/funds/${fundId}/movements/${movId}`, { method: "PUT", body });
+  },
+  deleteFundMovement(fundId, movId) {
+    return this.request(`/api/funds/${fundId}/movements/${movId}`, { method: "DELETE" });
+  },
+
+  adminListUsers() {
+    return this.request("/api/admin/users");
+  },
+  adminDeleteUser(id) {
+    return this.request(`/api/admin/users/${id}`, { method: "DELETE" });
+  },
+
+  listCreditCards() {
+    return this.request("/api/credit-cards");
+  },
+  createCreditCard(body) {
+    return this.request("/api/credit-cards", { method: "POST", body });
+  },
+  updateCreditCard(id, body) {
+    return this.request(`/api/credit-cards/${id}`, { method: "PUT", body });
+  },
+  deleteCreditCard(id) {
+    return this.request(`/api/credit-cards/${id}`, { method: "DELETE" });
+  },
+  listPurchases(cardId) {
+    return this.request(`/api/credit-cards/${cardId}/purchases`);
+  },
+  createPurchase(cardId, body) {
+    return this.request(`/api/credit-cards/${cardId}/purchases`, { method: "POST", body });
+  },
+  updatePurchase(cardId, purchaseId, body) {
+    return this.request(`/api/credit-cards/${cardId}/purchases/${purchaseId}`, { method: "PUT", body });
+  },
+  deletePurchase(cardId, purchaseId) {
+    return this.request(`/api/credit-cards/${cardId}/purchases/${purchaseId}`, { method: "DELETE" });
+  },
+  createPayment(cardId, body) {
+    return this.request(`/api/credit-cards/${cardId}/payments`, { method: "POST", body });
+  },
+  updatePayment(cardId, paymentId, body) {
+    return this.request(`/api/credit-cards/${cardId}/payments/${paymentId}`, { method: "PUT", body });
+  },
+  deletePayment(cardId, paymentId) {
+    return this.request(`/api/credit-cards/${cardId}/payments/${paymentId}`, { method: "DELETE" });
+  },
+
+  listCategories() {
+    return this.request("/api/categories");
+  },
+  createCategory(name) {
+    return this.request("/api/categories", { method: "POST", body: { name } });
+  },
+  deleteCategory(id) {
+    return this.request(`/api/categories/${id}`, { method: "DELETE" });
+  },
+};
+
+================================================================
+ARCHIVO: backend/frontend/js/app.js
+================================================================
+// ============ Estado global ============
+const state = {
+  user: null,
+  year: new Date().getFullYear(),
+  month: new Date().getMonth() + 1,
+  months: [],          // [{year, month}] disponibles + mes actual
+  transactions: [],
+  categories: [],
+  fixedPlans: [],
+  editingTxId: null,
+  activeView: "home",
+  charts: {},
+};
+
+const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+const cop = (n) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n || 0);
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => el.classList.add("hidden"), 2600);
+}
+
+// ============ Auth ============
+const authError = document.getElementById("auth-error");
+
+function setAuthError(msg) {
+  if (!msg) { authError.classList.add("hidden"); return; }
+  authError.textContent = msg;
+  authError.classList.remove("hidden");
+}
+
+document.getElementById("auth-toggle-btn").addEventListener("click", () => {
+  const loginForm = document.getElementById("form-login");
+  const regForm = document.getElementById("form-register");
+  const showingLogin = !loginForm.classList.contains("hidden");
+  loginForm.classList.toggle("hidden");
+  regForm.classList.toggle("hidden");
+  document.getElementById("auth-toggle-text").textContent = showingLogin ? "¿Ya tienes cuenta?" : "¿No tienes cuenta?";
+  document.getElementById("auth-toggle-btn").textContent = showingLogin ? "Entrar" : "Crear una";
+  setAuthError(null);
+});
+
+document.getElementById("form-login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  setAuthError(null);
+  try {
+    const data = await Api.login(
+      document.getElementById("login-email").value.trim(),
+      document.getElementById("login-password").value
+    );
+    onLoggedIn(data);
+  } catch (err) { setAuthError(err.message); }
+});
+
+document.getElementById("form-register").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  setAuthError(null);
+  try {
+    const data = await Api.register(
+      document.getElementById("reg-email").value.trim(),
+      document.getElementById("reg-password").value,
+      document.getElementById("reg-name").value.trim() || null
+    );
+    onLoggedIn(data);
+  } catch (err) { setAuthError(err.message); }
+});
+
+function onLoggedIn(data) {
+  Api.setToken(data.access_token);
+  state.user = data.user;
+  document.getElementById("view-auth").classList.add("hidden");
+  document.getElementById("shell").classList.remove("hidden");
+  document.getElementById("sidebar-user").textContent = data.user.full_name || data.user.email;
+  // Mostrar botones de admin solo si el usuario es admin
+  document.querySelectorAll(".admin-only").forEach((el) => {
+    el.classList.toggle("hidden", !data.user.is_admin);
+  });
+  bootstrapApp();
+}
+
+function logout() {
+  Api.setToken(null);
+  state.user = null;
+  document.getElementById("shell").classList.add("hidden");
+  document.getElementById("view-auth").classList.remove("hidden");
+}
+
+document.getElementById("logout-btn-mobile").addEventListener("click", logout);
+document.getElementById("logout-btn-desktop").addEventListener("click", logout);
+window.addEventListener("gastos:unauthorized", logout);
+
+// ============ Navegación entre vistas ============
+function switchView(view) {
+  state.activeView = view;
+  document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
+  document.getElementById(`view-${view}`).classList.remove("hidden");
+
+  document.querySelectorAll(".nav-item[data-view], .bottom-nav button[data-view]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.view === view);
+  });
+
+  const titles = { home: "Inicio", metrics: "Comparativos", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
+  document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
+
+  // El navegador de meses solo aplica a home
+  const monthDependentViews = ["home"];
+  document.getElementById("month-nav").style.display = monthDependentViews.includes(view) ? "" : "none";
+
+  if (view === "home") loadHome();
+  if (view === "metrics") loadMetrics();
+  if (view === "cards") loadCards();
+  if (view === "funds") loadFunds();
+  if (view === "admin") loadAdmin();
+  if (view === "categories") loadCategories();
+}
+
+document.querySelectorAll(".nav-item[data-view], .bottom-nav button[data-view]").forEach((b) => {
+  b.addEventListener("click", () => switchView(b.dataset.view));
+});
+
+// ============ Navegación de meses (año + grid de 12 meses) ============
+const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+async function initMonthNav() {
+  let available = [];
+  try { available = await Api.availableMonths(); } catch (_) {}
+  state.availableMonthSet = new Set(available.map((m) => `${m.year}-${m.month}`));
+  if (!state.navYear) state.navYear = new Date().getFullYear();
+  renderMonthGrid();
+}
+
+function renderMonthGrid() {
+  document.getElementById("nav-year-label").textContent = state.navYear;
+  const grid = document.getElementById("month-grid");
+  grid.innerHTML = MONTH_SHORT.map((name, i) => {
+    const m = i + 1;
+    const hasData = state.availableMonthSet && state.availableMonthSet.has(`${state.navYear}-${m}`);
+    const isActive = state.year === state.navYear && state.month === m;
+    return `<button class="month-pill${isActive ? " active" : ""}${!hasData ? " empty" : ""}"
+      data-year="${state.navYear}" data-month="${m}">${name}</button>`;
+  }).join("");
+  grid.querySelectorAll(".month-pill").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      state.year = parseInt(pill.dataset.year);
+      state.month = parseInt(pill.dataset.month);
+      renderMonthGrid();
+      refreshCurrentView();
+    });
+  });
+}
+
+document.getElementById("year-prev").addEventListener("click", () => {
+  state.navYear = (state.navYear || new Date().getFullYear()) - 1;
+  renderMonthGrid();
+});
+document.getElementById("year-next").addEventListener("click", () => {
+  const max = new Date().getFullYear() + 1;
+  if ((state.navYear || new Date().getFullYear()) < max) {
+    state.navYear = (state.navYear || new Date().getFullYear()) + 1;
+    renderMonthGrid();
+  }
+});
+
+// ============ Tabs de gastos (fijos / variables) ============
+function setExpenseTab(tab) {
+  const same = state.activeExpenseTab === tab;
+  state.activeExpenseTab = same ? null : tab;
+  document.getElementById("tab-fixed").classList.toggle("active", state.activeExpenseTab === "fixed");
+  document.getElementById("tab-variable").classList.toggle("active", state.activeExpenseTab === "variable");
+  document.getElementById("panel-fixed").style.display = state.activeExpenseTab === "fixed" ? "block" : "none";
+  document.getElementById("panel-variable").style.display = state.activeExpenseTab === "variable" ? "block" : "none";
+}
+document.getElementById("tab-fixed").addEventListener("click", () => setExpenseTab("fixed"));
+document.getElementById("tab-variable").addEventListener("click", () => setExpenseTab("variable"));
+
+function refreshCurrentView() {
+  document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
+  renderMonthGrid();
+  if (state.activeView === "home") loadHome();
+  else if (state.activeView === "metrics") loadMetrics(state.compYear || 2026);
+}
+
+// ============ HOME / CONCILIACIÓN ============
+async function loadHome() {
+  const txList = document.getElementById("tx-list");
+  txList.innerHTML = `<div class="loader">Cargando...</div>`;
+
+  let [summary, txs, plans] = await Promise.all([
+    Api.summary(state.year, state.month),
+    Api.listTransactions(state.year, state.month),
+    Api.listFixedPlans(state.year, state.month),
+  ]);
+
+  // Auto-cargar del mes anterior si el mes está vacío
+  const hasPayroll = txs.some((t) => t.type === "income" || t.type === "deduction");
+  let autoCopied = false;
+  if (!hasPayroll) {
+    try { await Api.copyPayroll(state.year, state.month); autoCopied = true; } catch (_) {}
+  }
+  if (plans.length === 0) {
+    try { await Api.copyPreviousPlans(state.year, state.month); autoCopied = true; } catch (_) {}
+  }
+  if (autoCopied) {
+    [summary, txs, plans] = await Promise.all([
+      Api.summary(state.year, state.month),
+      Api.listTransactions(state.year, state.month),
+      Api.listFixedPlans(state.year, state.month),
+    ]);
+    if (!hasPayroll && txs.some((t) => t.type === "income")) showToast("Nómina y gastos fijos pre-cargados del mes anterior. Ajusta si cambiaron.");
+  }
+
+  state.fixedPlans = plans;
+  state.transactions = txs;
+  state.summary = summary;
+
+  // --- Panel de conciliación ---
+  const computedEl = document.getElementById("recon-computed");
+  computedEl.textContent = cop(summary.computed_balance);
+  computedEl.classList.toggle("negative", summary.computed_balance < 0);
+
+  document.getElementById("val-opening").textContent = cop(summary.opening_balance);
+  document.getElementById("val-net").textContent = cop(summary.net_income);
+  document.getElementById("val-expenses").textContent = cop(summary.total_expenses);
+  document.getElementById("val-computed").textContent = cop(summary.computed_balance);
+
+  const statusEl = document.getElementById("recon-status");
+  const diffEl = document.getElementById("recon-diff");
+  const actualEl = document.getElementById("val-actual");
+
+  if (summary.actual_bank_balance === null || summary.actual_bank_balance === undefined) {
+    actualEl.textContent = "— sin ingresar —";
+    actualEl.classList.add("empty");
+    diffEl.textContent = "";
+    diffEl.className = "recon-diff";
+    statusEl.textContent = "Sin conciliar";
+    statusEl.className = "recon-status pending";
+    document.getElementById("recon-sub").textContent = "lo que debería quedarte este mes";
+  } else {
+    actualEl.textContent = cop(summary.actual_bank_balance);
+    actualEl.classList.remove("empty");
+    const diff = summary.reconciliation_diff;
+    if (summary.is_reconciled) {
+      statusEl.textContent = "✓ Conciliado";
+      statusEl.className = "recon-status ok";
+      diffEl.textContent = "Tu cuenta cuadra con el banco.";
+      diffEl.className = "recon-diff ok";
+    } else {
+      statusEl.textContent = "⚠ Descuadrado";
+      statusEl.className = "recon-status off";
+      const signo = diff > 0 ? "más" : "menos";
+      diffEl.textContent = `Tienes ${cop(Math.abs(diff))} ${signo} en el banco que lo calculado. Revisa si falta registrar algún movimiento.`;
+      diffEl.className = "recon-diff off";
+    }
+  }
+
+  // --- Nómina ---
+  renderPayroll(txs);
+
+  // --- Gastos fijos planificados ---
+  renderFixedPlans(plans);
+
+  // --- Stats ---
+  document.getElementById("stat-fixed").textContent = cop(summary.total_fixed);
+  document.getElementById("stat-variable").textContent = cop(summary.total_variable);
+
+  // --- Movimientos (solo gastos variables en columna derecha) ---
+  renderTxList(txs, summary);
+}
+
+// ============ GASTOS FIJOS PLANIFICADOS ============
+function renderFixedPlans(plans) {
+  const list = document.getElementById("fixed-plans-list");
+  const executed = plans.filter((p) => p.is_executed);
+
+  document.getElementById("fp-progress").textContent =
+    plans.length ? `${executed.length}/${plans.length} ejecutados` : "";
+
+  const filterQ = (document.getElementById("filter-fixed")?.value || "").toLowerCase();
+
+  // Transacciones fijas reales (importadas o manuales, no del checklist)
+  const fixedTxs = (state.transactions || []).filter(
+    (t) => t.type === "fixed" && t.notes !== "[plan-fijo]"
+  );
+
+  const visiblePlans = filterQ ? plans.filter((p) => p.name.toLowerCase().includes(filterQ)) : plans;
+  const visibleTxs = filterQ ? fixedTxs.filter((t) => t.description.toLowerCase().includes(filterQ)) : fixedTxs;
+
+  if (!visiblePlans.length && !visibleTxs.length) {
+    list.innerHTML = filterQ
+      ? `<div class="fp-empty">Sin resultados para "${escapeHtml(filterQ)}".</div>`
+      : `<div class="fp-empty">Sin gastos fijos este mes.<br>Agrégalos abajo o copia del mes anterior.</div>`;
+    return;
+  }
+
+  // Checklist de planes (con checkboxes)
+  let html = visiblePlans.map((p) => `
+    <div class="fp-item ${p.is_executed ? "fp-done" : ""}" data-id="${p.id}">
+      <button class="fp-check" data-id="${p.id}" title="${p.is_executed ? "Marcar pendiente" : "Marcar ejecutado"}">
+        ${p.is_executed ? "✓" : ""}
+      </button>
+      <span class="fp-name">${escapeHtml(p.name)}</span>
+      <span class="fp-amount tabular">${cop(p.amount)}</span>
+      <button class="fp-edit" data-id="${p.id}" title="Editar">✎</button>
+      <button class="fp-del" data-id="${p.id}" title="Eliminar">✕</button>
+    </div>
+  `).join("");
+
+  // Transacciones fijas (grupos por fecha, clicables para editar)
+  if (visibleTxs.length) {
+    const groups = {};
+    visibleTxs.forEach((t) => { (groups[t.date] = groups[t.date] || []).push(t); });
+    const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    html += dates.map((d) => `
+      <div class="tx-group">
+        <div class="tx-date-label">${dateLabel(d)}</div>
+        ${groups[d].sort((a, b) => b.id - a.id).map((t) => `
+          <div class="tx-row type-fixed" data-txid="${t.id}">
+            <div class="tx-icon">📌</div>
+            <div class="tx-info">
+              <div class="tx-desc">${escapeHtml(t.description)}</div>
+              <div class="tx-meta">${escapeHtml(t.category || "Gasto fijo")}</div>
+            </div>
+            <div class="tx-amount tabular" style="color:var(--fixed-color)">−${cop(t.amount)}</div>
+          </div>
+        `).join("")}
+      </div>
+    `).join("");
+  }
+
+  list.innerHTML = html;
+
+  list.querySelectorAll(".fp-check").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await Api.toggleFixedPlan(parseInt(btn.dataset.id));
+        const plans = await Api.listFixedPlans(state.year, state.month);
+        state.fixedPlans = plans;
+        renderFixedPlans(plans);
+        loadHome();
+      } catch (err) { showToast(err.message); }
+    });
+  });
+
+  list.querySelectorAll(".fp-del").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("¿Eliminar este gasto fijo?")) return;
+      try {
+        await Api.deleteFixedPlan(parseInt(btn.dataset.id));
+        const plans = await Api.listFixedPlans(state.year, state.month);
+        state.fixedPlans = plans;
+        renderFixedPlans(plans);
+        loadHome();
+      } catch (err) { showToast(err.message); }
+    });
+  });
+
+  list.querySelectorAll(".fp-edit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const plan = state.fixedPlans.find((p) => p.id === parseInt(btn.dataset.id));
+      if (!plan) return;
+      const newName = prompt("Nombre:", plan.name);
+      if (newName === null) return;
+      const newAmt = prompt("Valor (COP):", Math.round(plan.amount));
+      if (newAmt === null) return;
+      Api.updateFixedPlan(plan.id, { name: newName.trim() || plan.name, amount: parseFloat(newAmt) || plan.amount })
+        .then(async () => {
+          const plans = await Api.listFixedPlans(state.year, state.month);
+          state.fixedPlans = plans;
+          renderFixedPlans(plans);
+          if (plan.is_executed) loadHome();
+        })
+        .catch((err) => showToast(err.message));
+    });
+  });
+
+  // Transacciones fijas: clic abre modal de edición
+  list.querySelectorAll("[data-txid]").forEach((row) => {
+    row.addEventListener("click", () => openTxModal(parseInt(row.dataset.txid)));
+  });
+}
+
+// Filtro en tiempo real para gastos fijos
+document.getElementById("filter-fixed").addEventListener("input", () => {
+  renderFixedPlans(state.fixedPlans);
+});
+
+document.getElementById("add-plan-btn").addEventListener("click", async () => {
+  const nameEl = document.getElementById("new-plan-name");
+  const amtEl = document.getElementById("new-plan-amount");
+  const name = nameEl.value.trim();
+  const amount = parseFloat(amtEl.value);
+  if (!name || !amount || amount <= 0) { showToast("Escribe nombre y valor"); return; }
+  try {
+    await Api.createFixedPlan({ name, amount, month: state.month, year: state.year });
+    nameEl.value = ""; amtEl.value = "";
+    const plans = await Api.listFixedPlans(state.year, state.month);
+    state.fixedPlans = plans;
+    renderFixedPlans(plans);
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("copy-prev-plans-btn").addEventListener("click", async () => {
+  try {
+    await Api.copyPreviousPlans(state.year, state.month);
+    const plans = await Api.listFixedPlans(state.year, state.month);
+    state.fixedPlans = plans;
+    renderFixedPlans(plans);
+    showToast("Gastos fijos copiados del mes anterior");
+  } catch (err) { showToast(err.message); }
+});
+
+// Filtro de categoría para gastos variables
+document.getElementById("filter-variable-cat").addEventListener("change", () => {
+  renderTxList(state.transactions, state.summary);
+});
+
+function renderPayroll(txs) {
+  const salaryIncomes = txs.filter((t) => t.type === "income" && t.category === "Ingreso");
+  const deductions = txs.filter((t) => t.type === "deduction");
+
+  const line = (t) => `
+    <div class="payroll-line" data-id="${t.id}" style="cursor:pointer" title="Clic para editar">
+      <span class="pl-name">${escapeHtml(t.description)}</span>
+      <span class="pl-val tabular">${cop(t.amount)}</span>
+    </div>`;
+
+  const empty = (msg) => `<div class="pl-name" style="font-size:13px;color:var(--text-faint);padding:4px 0">${msg}</div>`;
+
+  document.getElementById("income-list").innerHTML =
+    salaryIncomes.length ? salaryIncomes.map(line).join("") : empty("Sin ingresos de nómina");
+  document.getElementById("deduction-list").innerHTML =
+    deductions.length ? deductions.map(line).join("") : empty("Sin deducciones registradas");
+
+  const salaryTotal = salaryIncomes.reduce((s, t) => s + t.amount, 0);
+  const deductionTotal = deductions.reduce((s, t) => s + t.amount, 0);
+  const salaryNet = salaryTotal - deductionTotal;
+  document.getElementById("ps-income").textContent = cop(salaryTotal);
+  document.getElementById("ps-deduction").textContent = cop(deductionTotal);
+  document.getElementById("ps-net").textContent = cop(salaryNet);
+  document.getElementById("payroll-net").textContent = cop(salaryNet);
+
+  document.querySelectorAll(".payroll-line").forEach((row) => {
+    row.addEventListener("click", () => openTxModal(parseInt(row.dataset.id)));
+  });
+}
+
+
+function dateLabel(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (d.getTime() === today.getTime()) return "Hoy";
+  if (d.getTime() === yesterday.getTime()) return "Ayer";
+  return new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long" }).format(d);
+}
+
+const TYPE_ICON = { income: "💰", deduction: "📉", fixed: "📌", variable: "🧾" };
+
+function renderTxList(txs, summary) {
+  const txList = document.getElementById("tx-list");
+  const catSel = document.getElementById("filter-variable-cat");
+
+  // Gastos variables + ingresos extra (no salario) en esta columna
+  const allVars = txs.filter((t) =>
+    t.type === "variable" ||
+    (t.type === "income" && t.category !== "Ingreso")
+  );
+
+  // Poblar el selector de categorías conservando la selección actual
+  const prevCat = catSel.value;
+  const cats = [...new Set(allVars.map((t) => t.category || "Otros"))].sort();
+  catSel.innerHTML = `<option value="">Todas las categorías</option>` +
+    cats.map((c) => `<option value="${escapeHtml(c)}"${c === prevCat ? " selected" : ""}>${escapeHtml(c)}</option>`).join("");
+
+  const activeCat = catSel.value;
+  const expenses = activeCat ? allVars.filter((t) => (t.category || "Otros") === activeCat) : allVars;
+
+  document.getElementById("tx-count").textContent = `${expenses.length} movimiento${expenses.length !== 1 ? "s" : ""}`;
+
+  if (!expenses.length) {
+    txList.innerHTML = `
+      <div class="empty-state">
+        <span class="ic">🗒️</span>
+        <p><strong>${activeCat ? "Sin movimientos en esta categoría" : "Sin movimientos este mes"}</strong></p>
+        <p>Toca "+" para registrar un gasto o ingreso extra.</p>
+      </div>`;
+    return;
+  }
+
+  // Saldo corrido: parte de (saldo anterior + nómina neta - fijos pagados - ingresos extra ya en net_income)
+  // los ingresos extra se suman cronológicamente para no duplicar
+  const extraIncomePre = txs.filter((t) => t.type === "income" && t.category !== "Ingreso").reduce((s, t) => s + t.amount, 0);
+  const startBalance = (summary.opening_balance || 0) + (summary.net_income || 0) - (summary.total_fixed || 0) - extraIncomePre;
+  const chrono = [...expenses].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  const runningMap = {};
+  let running = startBalance;
+  chrono.forEach((t) => {
+    running = t.type === "income" ? running + t.amount : running - t.amount;
+    runningMap[t.id] = running;
+  });
+
+  const groups = {};
+  expenses.forEach((t) => { (groups[t.date] = groups[t.date] || []).push(t); });
+  const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+  txList.innerHTML = dates.map((d) => `
+    <div class="tx-group">
+      <div class="tx-date-label">${dateLabel(d)}</div>
+      ${groups[d].sort((a, b) => b.id - a.id).map((t) => `
+        <div class="tx-row type-${t.type}" data-id="${t.id}">
+          <div class="tx-icon">${TYPE_ICON[t.type]}</div>
+          <div class="tx-info">
+            <div class="tx-desc">${escapeHtml(t.description)}</div>
+            <div class="tx-meta">${escapeHtml(t.category || "Otros")}</div>
+            <div class="tx-running">Saldo: ${cop(runningMap[t.id])}</div>
+          </div>
+          <div class="tx-amount tabular${t.type === "income" ? " positive" : ""}">
+            ${t.type === "income" ? "+" : "−"}${cop(t.amount)}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+
+  txList.querySelectorAll(".tx-row").forEach((row) => {
+    row.addEventListener("click", () => openTxModal(parseInt(row.dataset.id)));
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============ MÉTRICAS ============
+const CHART_PALETTE = ["#d4a843", "#6c8fc7", "#5fb87a", "#e2685a", "#a47bc7", "#5fb8b0", "#c78a5f", "#8d97a7"];
+
+const COMP_START_YEAR = 2026;
+
+function destroyChart(key) {
+  if (state.charts[key]) { state.charts[key].destroy(); delete state.charts[key]; }
+}
+
+function renderCompYearTabs(selectedYear) {
+  const currentYear = new Date().getFullYear();
+  const maxYear = currentYear + 1;
+  const tabs = document.getElementById("comp-year-tabs");
+  tabs.innerHTML = "";
+  for (let y = COMP_START_YEAR; y <= maxYear; y++) {
+    const btn = document.createElement("button");
+    btn.className = "comp-year-tab" + (y === selectedYear ? " active" : "");
+    btn.textContent = y;
+    btn.addEventListener("click", () => loadMetrics(y));
+    tabs.appendChild(btn);
+  }
+}
+
+async function loadMetrics(year) {
+  year = year || state.compYear || COMP_START_YEAR;
+  state.compYear = year;
+  renderCompYearTabs(year);
+  document.getElementById("comp-chart-title").textContent = `Fijos vs Variables — ${year}`;
+
+  let trend = [];
+  try { trend = await Api.yearlyTrend(year); } catch (_) {}
+
+  renderComparisonChart(trend);
+  renderComparisonTable(trend);
+}
+
+function renderComparisonChart(trend) {
+  destroyChart("comparison");
+
+  // Armar los 12 meses con ceros por defecto
+  const fixedData    = Array(12).fill(0);
+  const variableData = Array(12).fill(0);
+  trend.forEach((p) => {
+    fixedData[p.month - 1]    = p.total_fixed    || 0;
+    variableData[p.month - 1] = p.total_variable || 0;
+  });
+
+  const ctx = document.getElementById("chart-comparison");
+  state.charts.comparison = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: MONTH_SHORT,
+      datasets: [
+        {
+          label: "Gastos Fijos",
+          data: fixedData,
+          backgroundColor: "rgba(108,143,199,0.85)",
+          borderRadius: 5,
+          maxBarThickness: 28,
+        },
+        {
+          label: "Gastos Variables",
+          data: variableData,
+          backgroundColor: "rgba(226,104,90,0.85)",
+          borderRadius: 5,
+          maxBarThickness: 28,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: "#8d97a7", font: { size: 11 } },
+        },
+        y: {
+          grid: { color: "#2a3342" },
+          ticks: { color: "#8d97a7", callback: (v) => {
+            if (v >= 1_000_000) return "$" + (v / 1_000_000).toFixed(1) + "M";
+            if (v >= 1_000) return "$" + (v / 1_000).toFixed(0) + "K";
+            return "$" + v;
+          }},
+        },
+      },
+    },
+  });
+}
+
+function renderComparisonTable(trend) {
+  const byMonth = {};
+  trend.forEach((p) => { byMonth[p.month] = p; });
+
+  let totalFixed = 0, totalVariable = 0;
+  const tbody = document.getElementById("comp-table-body");
+
+  tbody.innerHTML = Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1;
+    const p = byMonth[m];
+    if (!p) {
+      return `<tr class="comp-row-empty">
+        <td>${MONTH_NAMES[i].charAt(0).toUpperCase() + MONTH_NAMES[i].slice(1)}</td>
+        <td class="num" colspan="3" style="color:var(--text-faint)">Sin datos</td>
+      </tr>`;
+    }
+    totalFixed    += p.total_fixed    || 0;
+    totalVariable += p.total_variable || 0;
+    const total = (p.total_fixed || 0) + (p.total_variable || 0);
+    const fixedPct = total > 0 ? Math.round(((p.total_fixed || 0) / total) * 100) : 0;
+    return `<tr>
+      <td>${MONTH_NAMES[i].charAt(0).toUpperCase() + MONTH_NAMES[i].slice(1)}</td>
+      <td class="num" style="color:var(--fixed-color)">${cop(p.total_fixed || 0)}</td>
+      <td class="num" style="color:var(--negative)">${cop(p.total_variable || 0)}</td>
+      <td class="num">
+        ${cop(total)}
+        <div class="comp-bar-mini">
+          <div class="comp-bar-fixed" style="width:${fixedPct}%"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+
+  const grandTotal = totalFixed + totalVariable;
+  document.getElementById("comp-table-foot").innerHTML = `
+    <tr class="comp-total-row">
+      <td><strong>Total año</strong></td>
+      <td class="num" style="color:var(--fixed-color)"><strong>${cop(totalFixed)}</strong></td>
+      <td class="num" style="color:var(--negative)"><strong>${cop(totalVariable)}</strong></td>
+      <td class="num"><strong>${cop(grandTotal)}</strong></td>
+    </tr>`;
+}
+
+// ============ CATEGORÍAS ============
+async function loadCategories() {
+  state.categories = await Api.listCategories();
+  renderCategoryList();
+}
+
+function renderCategoryList() {
+  const list = document.getElementById("cat-list");
+  list.innerHTML = state.categories.map((c) => `
+    <div class="cat-manage-row">
+      <span>${escapeHtml(c.name)}</span>
+      <button class="del-btn" data-id="${c.id}">✕</button>
+    </div>
+  `).join("");
+  list.querySelectorAll(".del-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await Api.deleteCategory(parseInt(btn.dataset.id));
+      loadCategories();
+    });
+  });
+}
+
+document.getElementById("add-cat-btn").addEventListener("click", async () => {
+  const input = document.getElementById("new-cat-name");
+  const name = input.value.trim();
+  if (!name) return;
+  await Api.createCategory(name);
+  input.value = "";
+  loadCategories();
+});
+
+// ============ MODAL: agregar/editar movimiento ============
+const modal = document.getElementById("modal-tx");
+const formTx = document.getElementById("form-tx");
+
+function openTxModal(txId = null) {
+  state.editingTxId = txId;
+  const tx = txId ? state.transactions.find((t) => t.id === txId) : null;
+
+  document.getElementById("modal-title").textContent = tx ? "Editar movimiento" : "Nuevo movimiento";
+  document.getElementById("modal-delete").classList.toggle("hidden", !tx);
+
+  // Mostrar botones ocultos (fijo/deducción) solo al editar esos tipos
+  ["fixed", "deduction"].forEach((t) => {
+    const btn = document.querySelector(`#type-toggle button[data-type="${t}"]`);
+    if (btn) btn.style.display = (tx?.type === t) ? "" : "none";
+  });
+
+  setTxType(tx ? tx.type : "variable");
+  document.getElementById("tx-desc").value = tx ? tx.description : "";
+  document.getElementById("tx-amount").value = tx ? Math.abs(tx.amount) : "";
+  document.getElementById("tx-date").value = tx ? tx.date : `${state.year}-${String(state.month).padStart(2, "0")}-${String(new Date().getDate()).padStart(2,"0")}`;
+  document.getElementById("tx-notes").value = (tx && tx.notes) || "";
+  populateCategorySelect(tx ? tx.category : null);
+
+  modal.classList.remove("hidden");
+}
+
+function closeTxModal() {
+  modal.classList.add("hidden");
+  formTx.reset();
+  state.editingTxId = null;
+}
+
+function setTxType(type) {
+  document.querySelectorAll("#type-toggle button").forEach((b) => b.classList.toggle("active", b.dataset.type === type));
+  // La categoría solo aplica a gastos variables
+  document.getElementById("cat-field").classList.toggle("hidden", type !== "variable");
+}
+
+document.querySelectorAll("#type-toggle button").forEach((btn) => {
+  btn.addEventListener("click", () => setTxType(btn.dataset.type));
+});
+
+function populateCategorySelect(selected) {
+  const sel = document.getElementById("tx-category");
+  sel.innerHTML = state.categories.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  if (selected) sel.value = selected;
+}
+
+document.getElementById("fab-add").addEventListener("click", () => openTxModal(null));
+document.getElementById("modal-close").addEventListener("click", closeTxModal);
+document.getElementById("modal-cancel").addEventListener("click", closeTxModal);
+modal.addEventListener("click", (e) => { if (e.target === modal) closeTxModal(); });
+
+formTx.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const type = document.querySelector("#type-toggle button.active").dataset.type;
+  const editingTx = state.editingTxId ? state.transactions.find((t) => t.id === state.editingTxId) : null;
+  const incomeCategory = (editingTx?.type === "income" && editingTx?.category === "Ingreso") ? "Ingreso" : "Otros ingresos";
+  const catByType = { variable: document.getElementById("tx-category").value || "Otros", fixed: "Gasto fijo", income: incomeCategory, deduction: "Deducción nómina" };
+  const payload = {
+    description: document.getElementById("tx-desc").value.trim(),
+    amount: parseFloat(document.getElementById("tx-amount").value),
+    date: document.getElementById("tx-date").value,
+    type,
+    category: catByType[type] || "Otros",
+    notes: document.getElementById("tx-notes").value.trim() || null,
+  };
+
+  try {
+    if (state.editingTxId) await Api.updateTransaction(state.editingTxId, payload);
+    else await Api.createTransaction(payload);
+    closeTxModal();
+    showToast("Movimiento guardado");
+    await initMonthNav();
+    refreshCurrentView();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("modal-delete").addEventListener("click", async () => {
+  if (!state.editingTxId) return;
+  if (!confirm("¿Eliminar este movimiento?")) return;
+  try {
+    await Api.deleteTransaction(state.editingTxId);
+    closeTxModal();
+    showToast("Movimiento eliminado");
+    await initMonthNav();
+    refreshCurrentView();
+  } catch (err) { showToast(err.message); }
+});
+
+// ============ Panel de nómina (colapsable) ============
+document.getElementById("payroll-toggle").addEventListener("click", () => {
+  document.querySelector(".panel").classList.toggle("open");
+});
+
+// ============ Modal de saldos (conciliación) ============
+const balanceModal = document.getElementById("modal-balance");
+let balanceMode = "opening"; // "opening" o "actual"
+
+function openBalanceModal(mode) {
+  balanceMode = mode;
+  const s = state.summary || {};
+  if (mode === "opening") {
+    document.getElementById("balance-modal-title").textContent = "Saldo anterior en cuenta";
+    document.getElementById("balance-hint").textContent = "¿Cuánto tenías en la cuenta al empezar este mes? Normalmente es el saldo con el que cerraste el mes anterior.";
+    document.getElementById("balance-label").textContent = "Saldo inicial (COP)";
+    document.getElementById("balance-input").value = s.opening_balance || "";
+    document.getElementById("use-prev-btn").style.display = "block";
+  } else {
+    document.getElementById("balance-modal-title").textContent = "Saldo real en tu banco";
+    document.getElementById("balance-hint").textContent = "Mira tu app del banco y escribe el saldo actual de la cuenta. La app comparará con el saldo calculado para decirte si estás conciliado.";
+    document.getElementById("balance-label").textContent = "Saldo en el banco (COP)";
+    document.getElementById("balance-input").value = (s.actual_bank_balance !== null && s.actual_bank_balance !== undefined) ? s.actual_bank_balance : "";
+    document.getElementById("use-prev-btn").style.display = "none";
+  }
+  balanceModal.classList.remove("hidden");
+  setTimeout(() => document.getElementById("balance-input").focus(), 50);
+}
+
+function closeBalanceModal() { balanceModal.classList.add("hidden"); }
+
+document.getElementById("row-opening").addEventListener("click", () => openBalanceModal("opening"));
+document.getElementById("edit-actual-btn").addEventListener("click", () => openBalanceModal("actual"));
+document.getElementById("balance-close").addEventListener("click", closeBalanceModal);
+document.getElementById("balance-cancel").addEventListener("click", closeBalanceModal);
+balanceModal.addEventListener("click", (e) => { if (e.target === balanceModal) closeBalanceModal(); });
+
+document.getElementById("use-prev-btn").addEventListener("click", async () => {
+  try {
+    const prev = await Api.previousClosing(state.year, state.month);
+    document.getElementById("balance-input").value = Math.round(prev.closing_balance);
+    showToast("Saldo del mes anterior cargado");
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("balance-save").addEventListener("click", async () => {
+  const val = parseFloat(document.getElementById("balance-input").value);
+  if (isNaN(val)) { showToast("Escribe un valor válido"); return; }
+  const data = balanceMode === "opening" ? { opening_balance: val } : { actual_bank_balance: val };
+  try {
+    await Api.updateStatement(state.year, state.month, data);
+    closeBalanceModal();
+    showToast("Saldo guardado");
+    loadHome();
+  } catch (err) { showToast(err.message); }
+});
+
+
+// ============================================================
+// FONDOS ADMINISTRADOS
+// ============================================================
+
+const FUND_MOVE_TYPES = {
+  "Ingreso":             { icon: "💰", dir: "in",  color: "var(--positive)" },
+  "Retiro":              { icon: "💸", dir: "out", color: "var(--negative)" },
+  "Préstamo otorgado":   { icon: "🤝", dir: "out", color: "#d4a843" },
+  "Cobro préstamo":      { icon: "↩️", dir: "in",  color: "var(--positive)" },
+  "CDT apertura":        { icon: "🏦", dir: "out", color: "var(--fixed-color)" },
+  "CDT rendimiento":     { icon: "📈", dir: "in",  color: "var(--positive)" },
+  "Intereses":           { icon: "📈", dir: "in",  color: "var(--positive)" },
+  "Otros":               { icon: "📋", dir: "in",  color: "var(--text-muted)" },
+};
+
+function fundMoveDir(amount) { return amount >= 0 ? "in" : "out"; }
+
+async function loadFunds() {
+  try {
+    const funds = await Api.listFunds();
+    state.funds = funds;
+    renderFunds(funds);
+  } catch (err) { showToast(err.message); }
+}
+
+function renderFunds(funds) {
+  const container = document.getElementById("funds-list");
+  if (!funds.length) {
+    container.innerHTML = `<div class="fp-empty" style="margin-top:24px;">No tienes fondos registrados.<br>Crea uno con el botón de arriba.</div>`;
+    return;
+  }
+
+  container.innerHTML = funds.map((fund) => {
+    const totalIn  = fund.movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0);
+    const totalOut = fund.movements.filter(m => m.amount < 0).reduce((s, m) => s + Math.abs(m.amount), 0);
+
+    // Movimientos ordenados por fecha desc para mostrar los más recientes primero
+    const sorted = [...fund.movements].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+    // Saldo corrido (cronológico asc)
+    let running = 0;
+    const balanceMap = {};
+    [...fund.movements].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id).forEach(m => {
+      running += m.amount;
+      balanceMap[m.id] = running;
+    });
+
+    const movsHtml = sorted.length ? sorted.map((m) => {
+      const meta = FUND_MOVE_TYPES[m.move_type] || FUND_MOVE_TYPES["Otros"];
+      const isIn = m.amount >= 0;
+      const sign = isIn ? "+" : "−";
+      const color = isIn ? "var(--positive)" : "var(--negative)";
+      return `
+        <div class="fund-mov-row" data-fund-id="${fund.id}" data-mov-id="${m.id}">
+          <div class="fund-mov-icon">${meta.icon}</div>
+          <div class="fund-mov-info">
+            <div class="fund-mov-desc">${escapeHtml(m.description)}</div>
+            <div class="fund-mov-meta">
+              <span class="fund-type-badge">${escapeHtml(m.move_type)}</span>
+              ${dateLabel(m.date)}
+              ${m.notes ? `· <em>${escapeHtml(m.notes)}</em>` : ""}
+            </div>
+          </div>
+          <div class="fund-mov-right">
+            <div class="fund-mov-amount tabular" style="color:${color}">${sign}${cop(Math.abs(m.amount))}</div>
+            <div class="fund-mov-balance tabular">= ${cop(balanceMap[m.id])}</div>
+          </div>
+        </div>`;
+    }).join("") : `<div class="fp-empty">Sin movimientos. Registra el primero con el botón +.</div>`;
+
+    return `
+      <div class="fund-block" id="fund-block-${fund.id}">
+        <div class="fund-head">
+          <div class="fund-head-info">
+            <div class="fund-name">🏦 ${escapeHtml(fund.name)}</div>
+            ${fund.description ? `<div class="fund-desc-text">${escapeHtml(fund.description)}</div>` : ""}
+          </div>
+          <div class="fund-head-actions">
+            <button class="btn-icon fund-add-mov-btn" data-fund-id="${fund.id}" title="Agregar movimiento">+</button>
+            <button class="btn-icon fund-edit-btn" data-fund-id="${fund.id}" title="Editar fondo">✎</button>
+          </div>
+        </div>
+        <div class="fund-summary">
+          <div class="fund-summary-item">
+            <div class="fund-summary-label">Saldo actual</div>
+            <div class="fund-summary-val tabular ${fund.balance >= 0 ? "positive" : "negative"}">${cop(fund.balance)}</div>
+          </div>
+          <div class="fund-summary-item">
+            <div class="fund-summary-label">Total entradas</div>
+            <div class="fund-summary-val tabular positive">+${cop(totalIn)}</div>
+          </div>
+          <div class="fund-summary-item">
+            <div class="fund-summary-label">Total salidas</div>
+            <div class="fund-summary-val tabular negative">−${cop(totalOut)}</div>
+          </div>
+        </div>
+        <div class="fund-movs">${movsHtml}</div>
+      </div>`;
+  }).join("");
+
+  // Listeners
+  container.querySelectorAll(".fund-add-mov-btn").forEach(btn =>
+    btn.addEventListener("click", () => openFundMovModal(parseInt(btn.dataset.fundId)))
+  );
+  container.querySelectorAll(".fund-edit-btn").forEach(btn =>
+    btn.addEventListener("click", () => openFundModal(parseInt(btn.dataset.fundId)))
+  );
+  container.querySelectorAll(".fund-mov-row").forEach(row =>
+    row.addEventListener("click", () => openFundMovModal(
+      parseInt(row.dataset.fundId), parseInt(row.dataset.movId)
+    ))
+  );
+}
+
+// ---- Modal de fondo ----
+let _editingFundId = null;
+
+function openFundModal(fundId = null) {
+  _editingFundId = fundId;
+  const fund = fundId ? (state.funds || []).find(f => f.id === fundId) : null;
+  document.getElementById("fund-modal-title").textContent = fund ? "Editar fondo" : "Nuevo fondo";
+  document.getElementById("fund-name").value = fund ? fund.name : "";
+  document.getElementById("fund-desc").value = fund ? (fund.description || "") : "";
+  document.getElementById("fund-modal-delete").classList.toggle("hidden", !fund);
+  document.getElementById("modal-fund").classList.remove("hidden");
+  document.getElementById("fund-name").focus();
+}
+
+function closeFundModal() { document.getElementById("modal-fund").classList.add("hidden"); }
+
+document.getElementById("fund-modal-close").addEventListener("click", closeFundModal);
+document.getElementById("fund-modal-cancel").addEventListener("click", closeFundModal);
+document.getElementById("add-fund-btn").addEventListener("click", () => openFundModal());
+
+document.getElementById("fund-modal-save").addEventListener("click", async () => {
+  const name = document.getElementById("fund-name").value.trim();
+  if (!name) { showToast("Escribe el nombre del fondo"); return; }
+  const description = document.getElementById("fund-desc").value.trim() || null;
+  try {
+    if (_editingFundId) {
+      await Api.updateFund(_editingFundId, { name, description });
+    } else {
+      await Api.createFund({ name, description });
+    }
+    closeFundModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("fund-modal-delete").addEventListener("click", async () => {
+  if (!_editingFundId) return;
+  const fund = (state.funds || []).find(f => f.id === _editingFundId);
+  if (!confirm(`¿Eliminar el fondo "${fund?.name}"?\nSe borrarán todos sus movimientos.`)) return;
+  try {
+    await Api.deleteFund(_editingFundId);
+    closeFundModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+// ---- Modal de movimiento ----
+let _movFundId = null;
+let _editingMovId = null;
+
+function openFundMovModal(fundId, movId = null) {
+  _movFundId = fundId;
+  _editingMovId = movId;
+
+  const fund = (state.funds || []).find(f => f.id === fundId);
+  const mov = movId ? (fund?.movements || []).find(m => m.id === movId) : null;
+
+  document.getElementById("fund-mov-title").textContent = mov ? "Editar movimiento" : "Nuevo movimiento";
+  document.getElementById("fund-mov-amount").value = mov ? Math.abs(mov.amount) : "";
+  document.getElementById("fund-mov-desc").value = mov ? mov.description : "";
+  document.getElementById("fund-mov-notes").value = mov ? (mov.notes || "") : "";
+  document.getElementById("fund-mov-type").value = mov ? mov.move_type : "Ingreso";
+
+  // fecha: hoy o la del movimiento
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById("fund-mov-date").value = mov ? mov.date : today;
+
+  // dirección
+  const dir = mov ? (mov.amount >= 0 ? "in" : "out") : "in";
+  document.querySelectorAll("#fund-direction-toggle button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.dir === dir);
+  });
+
+  document.getElementById("fund-mov-delete").classList.toggle("hidden", !mov);
+  document.getElementById("modal-fund-mov").classList.remove("hidden");
+  document.getElementById("fund-mov-desc").focus();
+}
+
+function closeFundMovModal() { document.getElementById("modal-fund-mov").classList.add("hidden"); }
+
+document.getElementById("fund-mov-close").addEventListener("click", closeFundMovModal);
+document.getElementById("fund-mov-cancel").addEventListener("click", closeFundMovModal);
+
+document.querySelectorAll("#fund-direction-toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#fund-direction-toggle button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+
+// Al cambiar el tipo, sugiere la dirección automáticamente
+document.getElementById("fund-mov-type").addEventListener("change", () => {
+  const type = document.getElementById("fund-mov-type").value;
+  const meta = FUND_MOVE_TYPES[type];
+  if (!meta) return;
+  const dir = meta.dir;
+  document.querySelectorAll("#fund-direction-toggle button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.dir === dir);
+  });
+});
+
+document.getElementById("fund-mov-save").addEventListener("click", async () => {
+  const absAmount = parseFloat(document.getElementById("fund-mov-amount").value);
+  const description = document.getElementById("fund-mov-desc").value.trim();
+  const move_type = document.getElementById("fund-mov-type").value;
+  const date = document.getElementById("fund-mov-date").value;
+  const notes = document.getElementById("fund-mov-notes").value.trim() || null;
+
+  if (!description) { showToast("Escribe una descripción"); return; }
+  if (!absAmount || absAmount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
+  if (!date) { showToast("Selecciona una fecha"); return; }
+
+  const activeDir = document.querySelector("#fund-direction-toggle button.active")?.dataset.dir;
+  const amount = activeDir === "out" ? -absAmount : absAmount;
+
+  const body = { date, amount, move_type, description, notes };
+  try {
+    if (_editingMovId) {
+      await Api.updateFundMovement(_movFundId, _editingMovId, body);
+    } else {
+      await Api.addFundMovement(_movFundId, body);
+    }
+    closeFundMovModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("fund-mov-delete").addEventListener("click", async () => {
+  if (!_editingMovId) return;
+  if (!confirm("¿Eliminar este movimiento?")) return;
+  try {
+    await Api.deleteFundMovement(_movFundId, _editingMovId);
+    closeFundMovModal();
+    loadFunds();
+  } catch (err) { showToast(err.message); }
+});
+
+// ============================================================
+// ADMINISTRACIÓN DE USUARIOS
+// ============================================================
+
+async function loadAdmin() {
+  if (!state.user?.is_admin) { switchView("home"); return; }
+  try {
+    const users = await Api.adminListUsers();
+    renderAdminUsers(users);
+  } catch (err) { showToast(err.message); }
+}
+
+function renderAdminUsers(users) {
+  const MONTH_NAMES_ES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  document.getElementById("admin-subtitle").textContent = `${users.length} usuario${users.length !== 1 ? "s" : ""} registrado${users.length !== 1 ? "s" : ""}`;
+
+  document.getElementById("admin-users-list").innerHTML = users.map((u) => {
+    const d = new Date(u.created_at);
+    const dateStr = `${d.getDate()} ${MONTH_NAMES_ES[d.getMonth()]} ${d.getFullYear()}`;
+    return `
+      <div class="admin-user-row ${u.is_admin ? "admin-user-me" : ""}">
+        <div class="admin-user-info">
+          <div class="admin-user-name">${escapeHtml(u.full_name || "—")} ${u.is_admin ? '<span class="admin-badge">Admin</span>' : ""}</div>
+          <div class="admin-user-email">${escapeHtml(u.email)}</div>
+          <div class="admin-user-meta">${u.transaction_count} movimientos · registrado ${dateStr}</div>
+        </div>
+        ${!u.is_admin ? `<button class="btn-danger admin-del-btn" data-uid="${u.id}" data-email="${escapeHtml(u.email)}">Eliminar</button>` : ""}
+      </div>`;
+  }).join("") || `<div class="fp-empty">Sin usuarios.</div>`;
+
+  document.querySelectorAll(".admin-del-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const uid = parseInt(btn.dataset.uid);
+      const email = btn.dataset.email;
+      if (!confirm(`¿Eliminar la cuenta de "${email}"?\nSe borrarán todos sus datos (movimientos, planes, tarjetas).`)) return;
+      try {
+        await Api.adminDeleteUser(uid);
+        showToast("Usuario eliminado");
+        loadAdmin();
+      } catch (err) { showToast(err.message); }
+    });
+  });
+}
+
+// ============================================================
+// TARJETAS DE CRÉDITO
+// ============================================================
+
+const CARD_COLORS = ["#8b5cf6","#e2685a","#5fb87a","#d4a843","#6c8fc7","#f472b6"];
+
+function purchaseStatus(p) {
+  const now = new Date();
+  const refYear = now.getFullYear();
+  const refMonth = now.getMonth() + 1;
+  const monthlyFee = p.total_amount / p.installments;
+  // cuotas transcurridas desde la primera cuota hasta hoy (inclusive)
+  const elapsed = (refYear - p.first_payment_year) * 12 + (refMonth - p.first_payment_month) + 1;
+  const paid = Math.max(0, Math.min(p.installments, elapsed));
+  const remaining = p.installments - paid;
+  return {
+    monthlyFee,
+    paid,
+    remaining,
+    remainingAmount: remaining * monthlyFee,
+    pct: Math.round((paid / p.installments) * 100),
+    finished: paid >= p.installments,
+  };
+}
+
+function renderCards(cards) {
+  const list = document.getElementById("cards-list");
+
+  // totales globales
+  let grandMonthly = 0, grandDebt = 0;
+  cards.forEach((card) => {
+    const totalPurchases = card.purchases.reduce((s, p) => s + p.total_amount, 0);
+    const totalPaid = (card.payments || []).reduce((s, p) => s + p.amount, 0);
+    grandDebt += Math.max(0, totalPurchases - totalPaid);
+    card.purchases.forEach((p) => {
+      const s = purchaseStatus(p);
+      if (!s.finished) grandMonthly += s.monthlyFee;
+    });
+  });
+  document.getElementById("cards-total-monthly").textContent = cop(grandMonthly);
+  document.getElementById("cards-total-debt").textContent = cop(grandDebt);
+
+  if (!cards.length) {
+    list.innerHTML = `<div class="fp-empty" style="margin-top:24px;">No tienes tarjetas registradas.<br>Agrega tu primera con el botón arriba.</div>`;
+    return;
+  }
+
+  const MONTH_NAMES_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+  list.innerHTML = cards.map((card) => {
+    const payments = card.payments || [];
+    const totalPurchases = card.purchases.reduce((s, p) => s + p.total_amount, 0);
+    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+    const balanceDue = totalPurchases - totalPaid;
+    const activePurchases = card.purchases.filter((p) => !purchaseStatus(p).finished);
+    const cardMonthly = activePurchases.reduce((s, p) => s + purchaseStatus(p).monthlyFee, 0);
+
+    const purchasesHtml = card.purchases.length
+      ? card.purchases.map((p) => {
+          const s = purchaseStatus(p);
+          const startLabel = `${MONTH_NAMES_SHORT[p.first_payment_month - 1]} ${p.first_payment_year}`;
+          return `
+            <div class="purchase-row${s.finished ? " purchase-done" : ""}" data-purchase-id="${p.id}" data-card-id="${card.id}">
+              <div class="purchase-top">
+                <div class="purchase-desc">${escapeHtml(p.description)}</div>
+                <div class="purchase-fee tabular" style="color:${s.finished ? "var(--text-faint)" : card.color}">${s.finished ? "Pagada" : cop(s.monthlyFee) + "/mes"}</div>
+              </div>
+              <div class="purchase-meta">${cop(p.total_amount)} · ${p.installments} cuota${p.installments > 1 ? "s" : ""} · desde ${startLabel}</div>
+              <div class="purchase-progress">
+                <div class="progress-bar"><div class="progress-fill" style="width:${s.pct}%;background:${card.color}"></div></div>
+                <div class="progress-label">${s.paid}/${p.installments} cuotas · ${s.finished ? "Terminada" : "Falta " + cop(s.remainingAmount)}</div>
+              </div>
+            </div>`;
+        }).join("")
+      : `<div class="fp-empty" style="padding:12px 16px;">Sin compras registradas.</div>`;
+
+    const paymentsHtml = payments.length
+      ? [...payments].sort((a, b) => b.date.localeCompare(a.date)).map((p) => `
+          <div class="payment-row" data-payment-id="${p.id}" data-card-id="${card.id}">
+            <div class="payment-icon">💳</div>
+            <div class="payment-info">
+              <div class="payment-desc">${p.notes ? escapeHtml(p.notes) : "Pago a tarjeta"}</div>
+              <div class="payment-date">${dateLabel(p.date)}</div>
+            </div>
+            <div class="payment-amount tabular positive">−${cop(p.amount)}</div>
+          </div>`).join("")
+      : "";
+
+    const debtColor = balanceDue > 0 ? "var(--negative)" : "var(--positive)";
+
+    return `
+      <div class="credit-card-block" id="card-block-${card.id}">
+        <div class="credit-card-head">
+          <div class="cc-chip" style="background:${card.color}"></div>
+          <div class="cc-info">
+            <div class="cc-name">${escapeHtml(card.name)}</div>
+            <div class="cc-monthly tabular">${cop(cardMonthly)}<span class="cc-monthly-label">/mes estimado</span></div>
+          </div>
+          <div class="cc-actions">
+            <button class="btn-icon pay-card-btn" data-card-id="${card.id}" title="Registrar pago">💳</button>
+            <button class="btn-icon add-purchase-btn" data-card-id="${card.id}" title="Agregar compra">+</button>
+            <button class="btn-icon edit-card-btn" data-card-id="${card.id}" title="Editar tarjeta">✎</button>
+          </div>
+        </div>
+
+        <div class="card-balance-bar">
+          <div class="card-balance-item">
+            <div class="card-balance-label">Total compras</div>
+            <div class="card-balance-val tabular">${cop(totalPurchases)}</div>
+          </div>
+          <div class="card-balance-item">
+            <div class="card-balance-label">Total pagado</div>
+            <div class="card-balance-val tabular positive">−${cop(totalPaid)}</div>
+          </div>
+          <div class="card-balance-item card-balance-debt">
+            <div class="card-balance-label">Saldo que debes</div>
+            <div class="card-balance-val tabular" style="color:${debtColor}">${cop(Math.abs(balanceDue))}${balanceDue <= 0 ? " ✓" : ""}</div>
+          </div>
+        </div>
+
+        <div class="cc-section-label">Compras / cuotas</div>
+        <div class="purchases-list">${purchasesHtml}</div>
+
+        ${payments.length ? `<div class="cc-section-label">Pagos realizados</div><div class="payments-list">${paymentsHtml}</div>` : ""}
+      </div>`;
+  }).join("");
+
+  // Listeners
+  list.querySelectorAll(".pay-card-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openPaymentModal(parseInt(btn.dataset.cardId)))
+  );
+  list.querySelectorAll(".add-purchase-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openPurchaseModal(parseInt(btn.dataset.cardId)))
+  );
+  list.querySelectorAll(".edit-card-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openCardModal(parseInt(btn.dataset.cardId)))
+  );
+  list.querySelectorAll(".purchase-row").forEach((row) =>
+    row.addEventListener("click", () => openPurchaseModal(parseInt(row.dataset.cardId), parseInt(row.dataset.purchaseId)))
+  );
+  list.querySelectorAll(".payment-row").forEach((row) =>
+    row.addEventListener("click", () => openPaymentModal(parseInt(row.dataset.cardId), parseInt(row.dataset.paymentId)))
+  );
+}
+
+async function loadCards() {
+  try {
+    const cards = await Api.listCreditCards();
+    state.creditCards = cards;
+    renderCards(cards);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+// ---- Modal de pago ----
+let _paymentCardId = null;
+let _editingPaymentId = null;
+
+function openPaymentModal(cardId, paymentId = null) {
+  _paymentCardId = cardId;
+  _editingPaymentId = paymentId;
+  const card = (state.creditCards || []).find(c => c.id === cardId);
+  const payment = paymentId ? (card?.payments || []).find(p => p.id === paymentId) : null;
+  document.getElementById("payment-modal-title").textContent =
+    payment ? `Editar pago — ${card?.name}` : `Registrar pago — ${card?.name}`;
+  document.getElementById("payment-amount").value = payment ? payment.amount : "";
+  document.getElementById("payment-date").value = payment ? payment.date : new Date().toISOString().slice(0, 10);
+  document.getElementById("payment-notes").value = payment ? (payment.notes || "") : "";
+  document.getElementById("payment-modal-delete").classList.toggle("hidden", !payment);
+  document.getElementById("modal-payment").classList.remove("hidden");
+  document.getElementById("payment-amount").focus();
+}
+
+function closePaymentModal() { document.getElementById("modal-payment").classList.add("hidden"); }
+
+document.getElementById("payment-modal-close").addEventListener("click", closePaymentModal);
+document.getElementById("payment-modal-cancel").addEventListener("click", closePaymentModal);
+
+document.getElementById("payment-modal-save").addEventListener("click", async () => {
+  const amount = parseFloat(document.getElementById("payment-amount").value);
+  const date = document.getElementById("payment-date").value;
+  const notes = document.getElementById("payment-notes").value.trim() || null;
+  if (!amount || amount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
+  if (!date) { showToast("Selecciona una fecha"); return; }
+  const body = { amount, date, notes };
+  try {
+    if (_editingPaymentId) {
+      await Api.updatePayment(_paymentCardId, _editingPaymentId, body);
+    } else {
+      await Api.createPayment(_paymentCardId, body);
+    }
+    closePaymentModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("payment-modal-delete").addEventListener("click", async () => {
+  if (!_editingPaymentId) return;
+  if (!confirm("¿Eliminar este pago?")) return;
+  try {
+    await Api.deletePayment(_paymentCardId, _editingPaymentId);
+    closePaymentModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+// ---- Modal de tarjeta ----
+let _editingCardId = null;
+
+function openCardModal(cardId = null) {
+  _editingCardId = cardId;
+  const card = cardId ? (state.creditCards || []).find((c) => c.id === cardId) : null;
+  document.getElementById("card-modal-title").textContent = card ? "Editar tarjeta" : "Nueva tarjeta";
+  document.getElementById("card-name").value = card ? card.name : "";
+  document.getElementById("card-modal-delete").classList.toggle("hidden", !card);
+
+  // color picker
+  const selectedColor = card ? card.color : CARD_COLORS[0];
+  document.querySelectorAll(".color-dot").forEach((dot) => {
+    dot.classList.toggle("active", dot.dataset.color === selectedColor);
+  });
+
+  document.getElementById("modal-card").classList.remove("hidden");
+  document.getElementById("card-name").focus();
+}
+
+function closeCardModal() {
+  document.getElementById("modal-card").classList.add("hidden");
+}
+
+document.getElementById("card-modal-close").addEventListener("click", closeCardModal);
+document.getElementById("card-modal-cancel").addEventListener("click", closeCardModal);
+
+document.querySelectorAll(".color-dot").forEach((dot) => {
+  dot.addEventListener("click", () => {
+    document.querySelectorAll(".color-dot").forEach((d) => d.classList.remove("active"));
+    dot.classList.add("active");
+  });
+});
+
+document.getElementById("add-card-btn").addEventListener("click", () => openCardModal());
+
+document.getElementById("card-modal-save").addEventListener("click", async () => {
+  const name = document.getElementById("card-name").value.trim();
+  if (!name) { showToast("Escribe el nombre de la tarjeta"); return; }
+  const activeDot = document.querySelector(".color-dot.active");
+  const color = activeDot ? activeDot.dataset.color : CARD_COLORS[0];
+  try {
+    if (_editingCardId) {
+      await Api.updateCreditCard(_editingCardId, { name, color });
+    } else {
+      await Api.createCreditCard({ name, color });
+    }
+    closeCardModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("card-modal-delete").addEventListener("click", async () => {
+  if (!_editingCardId) return;
+  const card = (state.creditCards || []).find((c) => c.id === _editingCardId);
+  if (!confirm(`¿Eliminar la tarjeta "${card?.name}"? Se borrarán todas sus compras.`)) return;
+  try {
+    await Api.deleteCreditCard(_editingCardId);
+    closeCardModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+// ---- Modal de compra ----
+let _editingPurchaseCardId = null;
+let _editingPurchaseId = null;
+
+function openPurchaseModal(cardId, purchaseId = null) {
+  _editingPurchaseCardId = cardId;
+  _editingPurchaseId = purchaseId;
+
+  const purchase = purchaseId
+    ? (state.creditCards || []).flatMap((c) => c.purchases).find((p) => p.id === purchaseId)
+    : null;
+
+  document.getElementById("purchase-modal-title").textContent = purchase ? "Editar compra" : "Nueva compra / avance";
+  document.getElementById("purchase-desc").value = purchase ? purchase.description : "";
+  document.getElementById("purchase-amount").value = purchase ? purchase.total_amount : "";
+  document.getElementById("purchase-installments").value = purchase ? purchase.installments : 1;
+  document.getElementById("purchase-notes").value = purchase ? (purchase.notes || "") : "";
+
+  const now = new Date();
+  document.getElementById("purchase-month").value = purchase ? purchase.first_payment_month : (now.getMonth() + 1);
+  document.getElementById("purchase-year").value = purchase ? purchase.first_payment_year : now.getFullYear();
+
+  document.getElementById("purchase-modal-delete").classList.toggle("hidden", !purchase);
+  updateFeePreview();
+
+  document.getElementById("modal-purchase").classList.remove("hidden");
+  document.getElementById("purchase-desc").focus();
+}
+
+function closePurchaseModal() {
+  document.getElementById("modal-purchase").classList.add("hidden");
+}
+
+function updateFeePreview() {
+  const amount = parseFloat(document.getElementById("purchase-amount").value) || 0;
+  const installments = parseInt(document.getElementById("purchase-installments").value) || 1;
+  document.getElementById("purchase-fee-preview").textContent = cop(installments > 0 ? amount / installments : 0);
+}
+
+document.getElementById("purchase-modal-close").addEventListener("click", closePurchaseModal);
+document.getElementById("purchase-modal-cancel").addEventListener("click", closePurchaseModal);
+
+["purchase-amount", "purchase-installments"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", updateFeePreview);
+});
+
+document.getElementById("purchase-modal-save").addEventListener("click", async () => {
+  const description = document.getElementById("purchase-desc").value.trim();
+  const total_amount = parseFloat(document.getElementById("purchase-amount").value);
+  const installments = parseInt(document.getElementById("purchase-installments").value) || 1;
+  const first_payment_month = parseInt(document.getElementById("purchase-month").value);
+  const first_payment_year = parseInt(document.getElementById("purchase-year").value);
+  const notes = document.getElementById("purchase-notes").value.trim() || null;
+
+  if (!description) { showToast("Escribe una descripción"); return; }
+  if (!total_amount || total_amount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
+
+  const body = { description, total_amount, installments, first_payment_month, first_payment_year, notes };
+  try {
+    if (_editingPurchaseId) {
+      await Api.updatePurchase(_editingPurchaseCardId, _editingPurchaseId, body);
+    } else {
+      await Api.createPurchase(_editingPurchaseCardId, body);
+    }
+    closePurchaseModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+document.getElementById("purchase-modal-delete").addEventListener("click", async () => {
+  if (!_editingPurchaseId) return;
+  if (!confirm("¿Eliminar esta compra?")) return;
+  try {
+    await Api.deletePurchase(_editingPurchaseCardId, _editingPurchaseId);
+    closePurchaseModal();
+    loadCards();
+  } catch (err) { showToast(err.message); }
+});
+
+async function bootstrapApp() {
+  state.categories = await Api.listCategories().catch(() => []);
+  state.compYear = new Date().getFullYear() < COMP_START_YEAR ? COMP_START_YEAR : new Date().getFullYear();
+  await initMonthNav();
+  document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
+  setExpenseTab("variable");
+  switchView("home");
+}
+
+(async function init() {
+  if (Api.token) {
+    try {
+      const user = await Api.me();
+      onLoggedIn({ access_token: Api.token, user });
+    } catch (_) { logout(); }
+  }
+})();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+
+================================================================
+ARCHIVO: backend/frontend/index.html
+================================================================
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Mis Gastos</title>
+<meta name="theme-color" content="#10141b" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Mis Gastos" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ======= AUTH VIEW ======= -->
+  <section id="view-auth" class="view-auth">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="coin">$</div>
+        <h1>Mis Gastos</h1>
+      </div>
+      <p class="auth-sub" id="auth-sub">Tu control financiero personal, en cualquier dispositivo.</p>
+
+      <div id="auth-error" class="auth-error hidden"></div>
+
+      <form id="form-login">
+        <div class="field">
+          <label>Correo</label>
+          <input type="email" id="login-email" required autocomplete="email" placeholder="tu@correo.com" />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary">Entrar</button>
+      </form>
+
+      <form id="form-register" class="hidden">
+        <div class="field">
+          <label>Nombre</label>
+          <input type="text" id="reg-name" placeholder="Camilo" />
+        </div>
+        <div class="field">
+          <label>Correo</label>
+          <input type="email" id="reg-email" required autocomplete="email" placeholder="tu@correo.com" />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" id="reg-password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres" />
+        </div>
+        <button type="submit" class="btn btn-primary">Crear cuenta</button>
+      </form>
+
+      <div class="auth-toggle">
+        <span id="auth-toggle-text">¿No tienes cuenta?</span>
+        <button class="btn-text" id="auth-toggle-btn">Crear una</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= APP SHELL ======= -->
+  <div id="shell" class="shell hidden">
+
+    <!-- Sidebar (desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="coin">$</div>
+        <strong>Mis Gastos</strong>
+      </div>
+      <button class="nav-item active" data-view="home"><span class="ic">🏠</span> Inicio</button>
+      <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Comparativos</button>
+      <button class="nav-item" data-view="cards"><span class="ic">💳</span> Tarjetas</button>
+      <button class="nav-item" data-view="funds"><span class="ic">🏦</span> Fondos</button>
+      <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
+      <button class="nav-item admin-only hidden" data-view="admin"><span class="ic">🛡️</span> Admin</button>
+      <div class="sidebar-footer">
+        <div class="sidebar-user" id="sidebar-user"></div>
+        <button class="nav-item" id="logout-btn-desktop"><span class="ic">⎋</span> Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div class="topbar-title" id="topbar-title">
+          Inicio
+          <span class="sub" id="topbar-sub"></span>
+        </div>
+        <button class="logout-btn" id="logout-btn-mobile">Salir</button>
+      </header>
+
+      <div class="month-nav" id="month-nav">
+        <div class="year-row">
+          <button class="year-btn" id="year-prev">‹</button>
+          <span class="year-label" id="nav-year-label">2026</span>
+          <button class="year-btn" id="year-next">›</button>
+        </div>
+        <div class="month-grid" id="month-grid"></div>
+      </div>
+
+      <main class="content">
+
+        <!-- HOME / CONCILIACIÓN -->
+        <section id="view-home" class="view">
+
+          <!-- Panel de conciliación bancaria (hero) -->
+          <div class="recon-card">
+            <div class="recon-top">
+              <div>
+                <div class="recon-label">Saldo en la cuenta</div>
+                <div class="recon-balance tabular" id="recon-computed">$0</div>
+                <div class="recon-sub" id="recon-sub">lo que debería quedarte este mes</div>
+              </div>
+              <div class="recon-status" id="recon-status"></div>
+            </div>
+
+            <div class="recon-flow">
+              <div class="flow-row editable" id="row-opening">
+                <span class="flow-name">Saldo anterior en cuenta <span style="font-size:11px;color:var(--text-faint)">(clic para editar)</span></span>
+                <span class="flow-val tabular" id="val-opening">$0</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-name">+ Ingresos netos (nómina)</span>
+                <span class="flow-val tabular positive" id="val-net">$0</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-name">− Gastos del mes</span>
+                <span class="flow-val tabular negative" id="val-expenses">$0</span>
+              </div>
+              <div class="flow-row total">
+                <span class="flow-name">= Saldo calculado</span>
+                <span class="flow-val tabular" id="val-computed">$0</span>
+              </div>
+            </div>
+
+            <div class="recon-bank">
+              <div class="recon-bank-head">
+                <span>Saldo real en tu banco</span>
+                <button class="btn-text" id="edit-actual-btn">Ingresar / editar</button>
+              </div>
+              <div class="recon-bank-val tabular" id="val-actual">— sin ingresar —</div>
+              <div class="recon-diff" id="recon-diff"></div>
+            </div>
+          </div>
+
+          <!-- Resumen de nómina (colapsable) -->
+          <div class="panel">
+            <button class="panel-head" id="payroll-toggle">
+              <span>Nómina del mes</span>
+              <span class="panel-net tabular" id="payroll-net">$0</span>
+              <span class="panel-chevron" id="payroll-chevron">▾</span>
+            </button>
+            <div class="panel-body" id="payroll-body">
+              <div class="payroll-col">
+                <div class="payroll-col-title positive">Salario y auxilios</div>
+                <div id="income-list"></div>
+                <div class="payroll-col-title negative" style="margin-top:14px;">Deducciones nómina</div>
+                <div id="deduction-list"></div>
+              </div>
+              <div class="payroll-summary">
+                <div class="ps-row"><span>Total ingresos</span><span class="tabular" id="ps-income">$0</span></div>
+                <div class="ps-row"><span>Total deducciones</span><span class="tabular" id="ps-deduction">$0</span></div>
+                <div class="ps-row net"><span>Neto a la cuenta</span><span class="tabular" id="ps-net">$0</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tarjetas de totales (clic para abrir lista) -->
+          <div class="expense-tabs">
+            <div class="expense-tab" id="tab-fixed">
+              <div class="tab-label" style="color:var(--fixed-color)">📌 Gastos Fijos</div>
+              <div class="tab-total tabular" id="stat-fixed">$0</div>
+              <div class="fp-progress" id="fp-progress"></div>
+            </div>
+            <div class="expense-tab" id="tab-variable">
+              <div class="tab-label" style="color:var(--negative)">🧾 Gastos Variables</div>
+              <div class="tab-total tabular" id="stat-variable">$0</div>
+              <span class="count" id="tx-count"></span>
+            </div>
+          </div>
+
+          <!-- Panel: Gastos Fijos (checklist) -->
+          <div class="expense-panel" id="panel-fixed" style="display:none">
+            <input type="text" id="filter-fixed" class="col-search" placeholder="Buscar gasto fijo..." />
+            <div id="fixed-plans-list"></div>
+            <div class="fp-add-row" style="margin-top:14px;">
+              <input type="text" id="new-plan-name" placeholder="Nuevo gasto fijo..." />
+              <input type="number" id="new-plan-amount" placeholder="Valor" step="1" min="0" />
+              <button class="btn btn-ghost" id="add-plan-btn">+</button>
+            </div>
+            <button class="btn-text" id="copy-prev-plans-btn" style="margin-top:10px;font-size:12px;">↩ Copiar del mes anterior</button>
+          </div>
+
+          <!-- Panel: Gastos Variables -->
+          <div class="expense-panel" id="panel-variable" style="display:none">
+            <select id="filter-variable-cat" class="col-search">
+              <option value="">Todas las categorías</option>
+            </select>
+            <div id="tx-list"></div>
+          </div>
+        </section>
+
+        <!-- METRICS -->
+        <!-- COMPARATIVOS -->
+        <section id="view-metrics" class="view hidden">
+          <div class="comp-year-tabs" id="comp-year-tabs"></div>
+
+          <div class="chart-card">
+            <div class="comp-chart-head">
+              <h3 id="comp-chart-title">Fijos vs Variables — 2026</h3>
+              <div class="comp-legend">
+                <span class="comp-dot" style="background:var(--fixed-color)"></span>Fijos
+                <span class="comp-dot" style="background:var(--negative); margin-left:12px"></span>Variables
+              </div>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-comparison"></canvas></div>
+          </div>
+
+          <div class="comp-table-wrap">
+            <table class="comp-table" id="comp-table">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th class="num">Gastos Fijos</th>
+                  <th class="num">Gastos Variables</th>
+                  <th class="num">Total gastos</th>
+                </tr>
+              </thead>
+              <tbody id="comp-table-body"></tbody>
+              <tfoot id="comp-table-foot"></tfoot>
+            </table>
+          </div>
+        </section>
+
+        <!-- ADMIN -->
+        <section id="view-admin" class="view hidden">
+          <div class="admin-header">
+            <h2>Gestión de usuarios</h2>
+            <div class="admin-subtitle" id="admin-subtitle"></div>
+          </div>
+          <div id="admin-users-list"></div>
+        </section>
+
+        <!-- FONDOS ADMINISTRADOS -->
+        <section id="view-funds" class="view hidden">
+          <div class="funds-header">
+            <div class="funds-header-title">Fondos administrados</div>
+            <button class="btn btn-primary" id="add-fund-btn">+ Nuevo fondo</button>
+          </div>
+          <div id="funds-list"></div>
+        </section>
+
+        <!-- TARJETAS DE CRÉDITO -->
+        <section id="view-cards" class="view hidden">
+          <div class="cards-header">
+            <div class="cards-header-stats">
+              <div class="cards-stat">
+                <div class="cards-header-label">Cuota mensual estimada</div>
+                <div class="cards-header-total tabular" id="cards-total-monthly">$0</div>
+              </div>
+              <div class="cards-stat">
+                <div class="cards-header-label">Saldo total que debes</div>
+                <div class="cards-header-total tabular negative" id="cards-total-debt">$0</div>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="add-card-btn">+ Nueva tarjeta</button>
+          </div>
+          <div id="cards-list"></div>
+        </section>
+
+        <!-- CATEGORIES -->
+        <section id="view-categories" class="view hidden">
+          <div class="section-head"><h2>Tus categorías</h2></div>
+          <div id="cat-list"></div>
+          <div class="add-cat-row">
+            <input type="text" id="new-cat-name" placeholder="Nueva categoría (ej. Mascotas)" />
+            <button class="btn btn-ghost" id="add-cat-btn">Agregar</button>
+          </div>
+        </section>
+
+      </main>
+
+      <button class="fab" id="fab-add">+</button>
+
+      <nav class="bottom-nav">
+        <button class="active" data-view="home"><span class="ic">🏠</span>Inicio</button>
+        <button data-view="metrics"><span class="ic">📊</span>Comparativos</button>
+        <button data-view="cards"><span class="ic">💳</span>Tarjetas</button>
+        <button data-view="funds"><span class="ic">🏦</span>Fondos</button>
+        <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>
+        <button class="admin-only hidden" data-view="admin"><span class="ic">🛡️</span>Admin</button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: agregar/editar movimiento ======= -->
+  <div id="modal-tx" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modal-title">Nuevo movimiento</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+
+      <div class="type-toggle" id="type-toggle">
+        <button data-type="variable" class="active">Gasto</button>
+        <button data-type="income">Ingreso extra</button>
+        <button data-type="fixed" style="display:none">Gasto fijo</button>
+        <button data-type="deduction" style="display:none">Deducción</button>
+      </div>
+
+      <form id="form-tx">
+        <div class="field">
+          <label>Descripción</label>
+          <input type="text" id="tx-desc" required placeholder="Ej. Almuerzo, Mercado, Sueldo..." />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Valor (COP)</label>
+            <input type="number" id="tx-amount" required step="1" placeholder="0" />
+          </div>
+          <div class="field">
+            <label>Fecha</label>
+            <input type="date" id="tx-date" required />
+          </div>
+        </div>
+        <div class="field" id="cat-field">
+          <label>Categoría</label>
+          <select id="tx-category"></select>
+        </div>
+        <div class="field">
+          <label>Notas (opcional)</label>
+          <input type="text" id="tx-notes" placeholder="Algún detalle adicional..." />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="modal-save">Guardar</button>
+        </div>
+        <button type="button" class="btn-danger-text hidden" id="modal-delete">Eliminar movimiento</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ======= MODAL: nuevo / editar fondo ======= -->
+  <div id="modal-fund" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="fund-modal-title">Nuevo fondo</h3>
+        <button class="modal-close" id="fund-modal-close">&times;</button>
+      </div>
+      <div class="field">
+        <label>Nombre del fondo</label>
+        <input type="text" id="fund-name" placeholder="Ej. Dinero Tío, Fondo familiar..." />
+      </div>
+      <div class="field">
+        <label>Descripción (opcional)</label>
+        <input type="text" id="fund-desc" placeholder="A quién pertenece o para qué es..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fund-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="fund-modal-save">Guardar</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="fund-modal-delete">Eliminar fondo y todos sus movimientos</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: nuevo / editar movimiento de fondo ======= -->
+  <div id="modal-fund-mov" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="fund-mov-title">Nuevo movimiento</h3>
+        <button class="modal-close" id="fund-mov-close">&times;</button>
+      </div>
+      <div class="type-toggle" id="fund-direction-toggle">
+        <button data-dir="in" class="active">▲ Entra</button>
+        <button data-dir="out">▼ Sale</button>
+      </div>
+      <div class="field">
+        <label>Tipo de movimiento</label>
+        <select id="fund-mov-type">
+          <option value="Ingreso">Ingreso</option>
+          <option value="Retiro">Retiro</option>
+          <option value="Préstamo otorgado">Préstamo otorgado</option>
+          <option value="Cobro préstamo">Cobro préstamo</option>
+          <option value="CDT apertura">CDT apertura</option>
+          <option value="CDT rendimiento">CDT rendimiento</option>
+          <option value="Intereses">Intereses</option>
+          <option value="Otros">Otros</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Valor (COP)</label>
+          <input type="number" id="fund-mov-amount" step="1" placeholder="0" min="1" />
+        </div>
+        <div class="field">
+          <label>Fecha</label>
+          <input type="date" id="fund-mov-date" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Descripción</label>
+        <input type="text" id="fund-mov-desc" placeholder="Ej. Depósito inicial, Préstamo a Juan..." />
+      </div>
+      <div class="field">
+        <label>Notas adicionales (opcional)</label>
+        <input type="text" id="fund-mov-notes" placeholder="Detalles, condiciones, plazo..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fund-mov-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="fund-mov-save">Guardar</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="fund-mov-delete">Eliminar movimiento</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: registrar / editar pago de tarjeta ======= -->
+  <div id="modal-payment" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="payment-modal-title">Registrar pago</h3>
+        <button class="modal-close" id="payment-modal-close">&times;</button>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Valor pagado (COP)</label>
+          <input type="number" id="payment-amount" step="1" placeholder="0" min="1" />
+        </div>
+        <div class="field">
+          <label>Fecha del pago</label>
+          <input type="date" id="payment-date" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Notas (opcional)</label>
+        <input type="text" id="payment-notes" placeholder="Ej. Pago mínimo junio, Abono extra..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="payment-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="payment-modal-save">Guardar pago</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="payment-modal-delete">Eliminar pago</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: nueva / editar tarjeta ======= -->
+  <div id="modal-card" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="card-modal-title">Nueva tarjeta</h3>
+        <button class="modal-close" id="card-modal-close">&times;</button>
+      </div>
+      <div class="field">
+        <label>Nombre de la tarjeta</label>
+        <input type="text" id="card-name" placeholder="Ej. Nu Bank, Falabella..." />
+      </div>
+      <div class="field">
+        <label>Color</label>
+        <div class="color-picker" id="card-color-picker">
+          <button class="color-dot active" data-color="#8b5cf6" style="background:#8b5cf6" title="Morado"></button>
+          <button class="color-dot" data-color="#e2685a" style="background:#e2685a" title="Rojo"></button>
+          <button class="color-dot" data-color="#5fb87a" style="background:#5fb87a" title="Verde"></button>
+          <button class="color-dot" data-color="#d4a843" style="background:#d4a843" title="Amarillo"></button>
+          <button class="color-dot" data-color="#6c8fc7" style="background:#6c8fc7" title="Azul"></button>
+          <button class="color-dot" data-color="#f472b6" style="background:#f472b6" title="Rosa"></button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="card-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="card-modal-save">Guardar</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="card-modal-delete">Eliminar tarjeta</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: nueva / editar compra ======= -->
+  <div id="modal-purchase" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="purchase-modal-title">Nueva compra / avance</h3>
+        <button class="modal-close" id="purchase-modal-close">&times;</button>
+      </div>
+      <div class="field">
+        <label>Descripción</label>
+        <input type="text" id="purchase-desc" placeholder="Ej. TV Samsung, Viaje, Avance..." />
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Valor total (COP)</label>
+          <input type="number" id="purchase-amount" step="1" placeholder="0" min="1" />
+        </div>
+        <div class="field">
+          <label>Cuotas</label>
+          <input type="number" id="purchase-installments" step="1" placeholder="1" min="1" max="60" value="1" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Cuota mensual estimada</label>
+        <div class="purchase-fee-preview tabular" id="purchase-fee-preview">$0</div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Primera cuota — Mes</label>
+          <select id="purchase-month">
+            <option value="1">Enero</option><option value="2">Febrero</option>
+            <option value="3">Marzo</option><option value="4">Abril</option>
+            <option value="5">Mayo</option><option value="6">Junio</option>
+            <option value="7">Julio</option><option value="8">Agosto</option>
+            <option value="9">Septiembre</option><option value="10">Octubre</option>
+            <option value="11">Noviembre</option><option value="12">Diciembre</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Año</label>
+          <input type="number" id="purchase-year" step="1" placeholder="2026" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Notas (opcional)</label>
+        <input type="text" id="purchase-notes" placeholder="Algún detalle..." />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="purchase-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="purchase-modal-save">Guardar</button>
+      </div>
+      <button type="button" class="btn-danger-text hidden" id="purchase-modal-delete">Eliminar compra</button>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: editar saldos (conciliación) ======= -->
+  <div id="modal-balance" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="balance-modal-title">Saldo</h3>
+        <button class="modal-close" id="balance-close">&times;</button>
+      </div>
+      <p class="modal-hint" id="balance-hint"></p>
+      <div class="field">
+        <label id="balance-label">Valor (COP)</label>
+        <input type="number" id="balance-input" step="1" placeholder="0" />
+      </div>
+      <button class="btn-text" id="use-prev-btn" style="margin-bottom:8px; display:none;">Usar saldo final del mes anterior</button>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="balance-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="balance-save">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/vendor/chart.umd.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
+
+================================================================
+ARCHIVO: backend/frontend/css/styles.css
+================================================================
+:root {
+  /* ---- Paleta ---- */
+  --bg: #10141b;
+  --bg-elevated: #161c26;
+  --surface: #1b222e;
+  --surface-hover: #222a38;
+  --border: #2a3342;
+  --text: #eef1f6;
+  --text-muted: #8d97a7;
+  --text-faint: #5b6473;
+  --accent: #d4a843;          /* oro/ledger — color de marca */
+  --accent-soft: rgba(212, 168, 67, 0.14);
+  --positive: #5fb87a;        /* ingresos */
+  --negative: #e2685a;        /* gastos */
+  --fixed-color: #6c8fc7;     /* gastos fijos */
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  height: 100%;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 10% -10%, rgba(212, 168, 67, 0.07), transparent 40%),
+    radial-gradient(circle at 90% 0%, rgba(108, 143, 199, 0.06), transparent 40%);
+}
+
+h1, h2, h3, .num-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+button { font-family: inherit; }
+
+a { color: var(--accent); text-decoration: none; }
+
+.hidden { display: none !important; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ---------- Scrollbars discretos ---------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+
+/* ============ AUTH VIEW ============ */
+.view-auth {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 36px 28px;
+  box-shadow: var(--shadow);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.auth-brand .coin {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--accent), #9a7a2c);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; color: #1a1402; font-size: 16px;
+  flex-shrink: 0;
+}
+
+.auth-brand h1 { font-size: 21px; margin: 0; }
+
+.auth-sub { color: var(--text-muted); font-size: 13.5px; margin: 4px 0 28px; }
+
+.field { margin-bottom: 16px; }
+
+.field label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.field input, .field select, .field textarea {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--accent);
+}
+
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 18px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s, opacity 0.15s, background 0.15s;
+  font-family: inherit;
+}
+.btn:active { transform: scale(0.97); }
+
+.btn-primary { background: var(--accent); color: #1a1402; width: 100%; }
+.btn-primary:hover { opacity: 0.92; }
+
+.btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.btn-ghost:hover { color: var(--text); border-color: var(--text-faint); }
+
+.btn-text {
+  background: none; border: none; color: var(--accent);
+  font-size: 13.5px; font-weight: 600; cursor: pointer; padding: 0;
+}
+
+.auth-toggle { text-align: center; margin-top: 22px; font-size: 13.5px; color: var(--text-muted); }
+
+.auth-error {
+  background: rgba(226, 104, 90, 0.12);
+  border: 1px solid rgba(226, 104, 90, 0.35);
+  color: #f0a59c;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+/* ============ APP SHELL ============ */
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: none;
+  width: 230px;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 28px; }
+.sidebar-brand .coin { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(145deg, var(--accent), #9a7a2c); display:flex; align-items:center; justify-content:center; font-weight:700; color:#1a1402; font-size:14px; }
+.sidebar-brand strong { font-family: var(--font-display); font-size: 16px; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 2px;
+  background: none; border: none; width: 100%; text-align: left;
+  font-family: inherit;
+}
+.nav-item .ic { font-size: 17px; width: 20px; text-align: center; }
+.nav-item:hover { background: var(--surface); color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--accent); }
+
+.sidebar-footer { margin-top: auto; }
+.sidebar-user { font-size: 12.5px; color: var(--text-faint); padding: 8px; word-break: break-all; }
+
+.main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* ---- Topbar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: rgba(16, 20, 27, 0.92);
+  backdrop-filter: blur(6px);
+  z-index: 20;
+}
+
+.topbar-title { font-size: 17px; font-weight: 600; }
+.topbar-title .sub { display:block; font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top:1px;}
+
+/* ---- Month nav (year + 12-month grid) ---- */
+.month-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px 12px;
+  flex-shrink: 0;
+}
+.year-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.year-btn {
+  background: none; border: 1px solid var(--border); border-radius: 20px;
+  padding: 2px 13px; color: var(--text-muted); cursor: pointer; font-size: 17px; line-height: 1.5;
+  transition: border-color 0.15s, color 0.15s;
+}
+.year-btn:hover { border-color: var(--accent); color: var(--accent); }
+.year-label { font-size: 15px; font-weight: 700; min-width: 44px; text-align: center; }
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 6px;
+}
+@media (max-width: 620px) { .month-grid { grid-template-columns: repeat(6, 1fr); } }
+.month-pill {
+  padding: 7px 2px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: none; color: var(--text-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; text-align: center; transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.month-pill:hover:not(.active) { border-color: var(--text-faint); color: var(--text); }
+.month-pill.active { border-color: var(--accent); background: rgba(212,168,67,0.13); color: var(--accent); }
+.month-pill.empty { color: var(--text-faint); opacity: 0.45; }
+
+/* ---- Expense tabs (click to open list) ---- */
+.expense-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;
+}
+.expense-tab {
+  background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius-md);
+  padding: 14px 16px; cursor: pointer; transition: border-color 0.15s;
+  user-select: none;
+}
+.expense-tab:hover { border-color: var(--text-faint); }
+.expense-tab.active { border-color: var(--accent); }
+.tab-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 4px; }
+.tab-total { font-size: 22px; font-weight: 700; margin-top: 2px; }
+.expense-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 16px; margin-top: 10px;
+}
+
+.logout-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; cursor: pointer; }
+.logout-btn:hover { color: var(--negative); border-color: var(--negative); }
+
+.content { flex: 1; padding: 18px 16px 100px; max-width: 1080px; width: 100%; margin: 0 auto; }
+
+/* ---- Panel de conciliación (elemento de firma) ---- */
+.recon-card {
+  background: linear-gradient(160deg, var(--surface), var(--bg-elevated));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.recon-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.recon-label { font-size: 12.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.recon-balance { font-size: 36px; font-weight: 600; margin: 4px 0 2px; line-height: 1.05; }
+.recon-balance.negative { color: var(--negative); }
+.recon-sub { font-size: 12px; color: var(--text-faint); }
+
+.recon-status { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.recon-status.ok { background: rgba(95,184,122,0.15); color: var(--positive); }
+.recon-status.off { background: rgba(226,104,90,0.15); color: var(--negative); }
+.recon-status.pending { background: var(--bg-elevated); color: var(--text-faint); }
+
+.recon-flow { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.flow-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 13.5px; color: var(--text-muted); }
+.flow-row.editable { cursor: pointer; }
+.flow-row.editable:hover .flow-name { color: var(--accent); }
+.flow-row.editable .flow-name::after { content: " ✎"; font-size: 11px; opacity: 0.5; }
+.flow-val { font-weight: 600; color: var(--text); }
+.flow-val.positive { color: var(--positive); }
+.flow-val.negative { color: var(--negative); }
+.flow-row.total { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 11px; font-size: 14.5px; }
+.flow-row.total .flow-name { color: var(--text); font-weight: 600; }
+.flow-row.total .flow-val { color: var(--accent); }
+
+.recon-bank { margin-top: 16px; background: var(--bg-elevated); border-radius: var(--radius-md); padding: 14px; }
+.recon-bank-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+.recon-bank-val { font-size: 20px; font-weight: 600; margin-top: 6px; }
+.recon-bank-val.empty { color: var(--text-faint); font-size: 14px; font-weight: 400; }
+.recon-diff { font-size: 13px; margin-top: 8px; font-weight: 600; }
+.recon-diff.ok { color: var(--positive); }
+.recon-diff.off { color: var(--negative); }
+
+/* ---- Panel colapsable (nómina) ---- */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 16px; overflow: hidden; }
+.panel-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 15px 16px; background: none; border: none; color: var(--text); font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.panel-head .panel-net { margin-left: auto; color: var(--positive); font-weight: 600; }
+.panel-chevron { color: var(--text-faint); transition: transform 0.2s; font-size: 12px; }
+.panel.open .panel-chevron { transform: rotate(180deg); }
+.panel-body { display: none; padding: 0 16px 16px; }
+.panel.open .panel-body { display: block; }
+
+.payroll-col-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+.payroll-col-title.positive { color: var(--positive); }
+.payroll-col-title.negative { color: var(--negative); }
+.payroll-line { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13.5px; border-bottom: 1px solid rgba(42,51,66,0.5); }
+.payroll-line .pl-name { color: var(--text-muted); }
+.payroll-line .pl-val { font-weight: 500; }
+.payroll-summary { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.ps-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13.5px; color: var(--text-muted); }
+.ps-row.net { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 10px; font-size: 15px; font-weight: 600; color: var(--accent); }
+.ps-row.net span:last-child { color: var(--accent); }
+
+.modal-hint { font-size: 13px; color: var(--text-muted); margin: -4px 0 16px; line-height: 1.4; }
+
+/* Running balance en cada movimiento */
+.tx-running { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* ---- Filter inputs inside expense panels ---- */
+.col-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.col-search:focus { border-color: var(--accent); }
+
+/* ---- Section headers ---- */
+.section-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 12px; }
+.section-head h2 { font-size: 15.5px; margin: 0; }
+.section-head .count { font-size: 12.5px; color: var(--text-faint); }
+
+/* ---- Transaction list ---- */
+.tx-group { margin-bottom: 4px; }
+.tx-date-label { font-size: 12px; color: var(--text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 10px 2px 6px; }
+
+.tx-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.tx-row:hover { border-color: var(--text-faint); }
+
+.tx-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+.tx-row.type-income .tx-icon { background: rgba(95, 184, 122, 0.14); }
+.tx-row.type-fixed .tx-icon { background: rgba(108, 143, 199, 0.14); }
+
+.tx-info { flex: 1; min-width: 0; }
+.tx-desc { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tx-meta { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+.tx-amount { font-size: 15px; font-weight: 600; flex-shrink: 0; }
+.tx-row.type-income .tx-amount { color: var(--positive); }
+.tx-row.type-fixed .tx-amount { color: var(--fixed-color); }
+.tx-row.type-variable .tx-amount { color: var(--text); }
+
+.empty-state {
+  text-align: center;
+  padding: 50px 20px;
+  color: var(--text-faint);
+}
+.empty-state .ic { font-size: 34px; margin-bottom: 10px; display:block; }
+.empty-state p { font-size: 13.5px; margin: 4px 0; }
+
+/* ---- Metrics view ---- */
+/* Comparativos */
+.comp-year-tabs {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.comp-year-tab {
+  padding: 6px 18px; border-radius: 20px; font-size: 14px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-muted); cursor: pointer; transition: all .15s;
+}
+.comp-year-tab:hover { border-color: var(--accent); color: var(--accent); }
+.comp-year-tab.active { background: var(--accent); color: #10141b; border-color: var(--accent); }
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 18px 8px;
+  margin-bottom: 16px;
+}
+.chart-card h3 { font-size: 14px; margin: 0 0 14px; color: var(--text-muted); font-weight: 600; }
+.chart-wrap { position: relative; height: 240px; }
+
+.comp-chart-head {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+}
+.comp-chart-head h3 { margin: 0; font-size: 14px; color: var(--text-muted); font-weight: 600; }
+.comp-legend { display: flex; align-items: center; font-size: 12px; color: var(--text-muted); }
+.comp-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+
+/* Tabla comparativa */
+.comp-table-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.comp-table th {
+  padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
+  color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em;
+  border-bottom: 1px solid var(--border); background: var(--bg-elevated);
+}
+.comp-table th.num, .comp-table td.num { text-align: right; }
+.comp-table td {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-body);
+}
+.comp-table tbody tr:last-child td { border-bottom: none; }
+.comp-table .comp-row-empty td { color: var(--text-faint); }
+.comp-table tfoot td {
+  padding: 11px 14px; background: var(--bg-elevated);
+  border-top: 1px solid var(--border); border-bottom: none;
+}
+.comp-total-row td { font-size: 13.5px; }
+
+/* Mini barra proporcional fijos vs variables */
+.comp-bar-mini {
+  height: 3px; background: rgba(226,104,90,0.35); border-radius: 2px;
+  margin-top: 4px; overflow: hidden;
+}
+.comp-bar-fixed { height: 100%; background: var(--fixed-color); border-radius: 2px; }
+
+/* Cat legend — keep for potential reuse */
+.cat-legend { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.cat-legend-row { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.cat-legend-row .sw { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.cat-legend-row .name { flex: 1; color: var(--text-muted); }
+.cat-legend-row .amt { font-weight: 600; }
+
+/* ---- Categories view ---- */
+.cat-manage-row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 8px;
+}
+.cat-manage-row .del-btn { background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 16px; }
+.cat-manage-row .del-btn:hover { color: var(--negative); }
+.add-cat-row { display: flex; gap: 8px; margin-top: 14px; }
+.add-cat-row input { flex: 1; }
+
+/* ---- FAB ---- */
+.fab {
+  position: fixed;
+  right: 20px;
+  bottom: 86px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1a1402;
+  border: none;
+  font-size: 26px;
+  font-weight: 400;
+  box-shadow: 0 8px 20px rgba(212, 168, 67, 0.35);
+  cursor: pointer;
+  z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+}
+@media (min-width: 900px) { .fab { bottom: 32px; } }
+
+/* ---- Bottom nav (mobile) ---- */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  z-index: 25;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.bottom-nav button {
+  flex: 1;
+  background: none; border: none;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  padding: 10px 0 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bottom-nav button .ic { font-size: 19px; }
+.bottom-nav button.active { color: var(--accent); }
+
+@media (min-width: 900px) {
+  .sidebar { display: flex; }
+  .bottom-nav { display: none; }
+  .content { padding: 24px 32px 60px; }
+}
+
+/* ============ MODAL ============ */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(8, 10, 14, 0.6);
+  display: flex; align-items: flex-end; justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(2px);
+}
+@media (min-width: 640px) { .modal { align-items: center; } }
+
+.modal-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 22px 22px 0 0;
+  width: 100%;
+  max-width: 460px;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 22px 22px 28px;
+}
+@media (min-width: 640px) { .modal-card { border-radius: var(--radius-lg); } }
+
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.modal-head h3 { margin: 0; font-size: 17px; }
+.modal-close { background: none; border: none; color: var(--text-faint); font-size: 22px; cursor: pointer; line-height: 1; }
+
+.type-toggle { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.type-toggle button {
+  flex: 1; min-width: 70px; padding: 9px 4px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.type-toggle button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+.modal-actions .btn { flex: 1; }
+.btn-danger-text { background: none; border: none; color: var(--negative); font-size: 13.5px; font-weight: 600; cursor: pointer; margin-top: 14px; width: 100%; text-align: center; padding: 6px; }
+
+.toast {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  color: var(--text); padding: 11px 18px; border-radius: 999px;
+  font-size: 13.5px; z-index: 80; box-shadow: var(--shadow);
+}
+
+.loader { text-align: center; padding: 40px; color: var(--text-faint); font-size: 13px; }
+
+/* ============ GASTOS FIJOS PLANIFICADOS ============ */
+.fp-empty { font-size: 13px; color: var(--text-faint); padding: 8px 0 12px; }
+
+.fp-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.fp-item:last-child { border-bottom: none; }
+.fp-item.fp-done .fp-name { text-decoration: line-through; color: var(--text-faint); }
+.fp-item.fp-done .fp-amount { color: var(--positive); }
+
+.fp-check {
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  border: 2px solid var(--border); background: transparent;
+  color: var(--positive); font-size: 13px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+.fp-done .fp-check { border-color: var(--positive); background: rgba(95,184,122,0.15); }
+
+.fp-name { flex: 1; font-size: 14px; }
+.fp-amount { font-size: 14px; color: var(--text-muted); min-width: 80px; text-align: right; }
+
+.fp-edit, .fp-del {
+  background: none; border: none; cursor: pointer; font-size: 14px;
+  color: var(--text-faint); padding: 2px 4px; flex-shrink: 0;
+}
+.fp-edit:hover { color: var(--accent); }
+.fp-del:hover { color: var(--negative); }
+
+.fp-add-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.fp-add-row input[type="text"] { flex: 2; min-width: 100px; }
+.fp-add-row input[type="number"] { flex: 1; min-width: 80px; }
+.fp-progress { font-size: 11.5px; color: var(--text-muted); text-align: right; flex-shrink: 0; max-width: 120px; line-height: 1.4; }
+
+.payroll-col-title.accent { color: var(--accent); }
+
+/* ============================================================
+   TARJETAS DE CRÉDITO
+   ============================================================ */
+
+.cards-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px; flex-wrap: wrap;
+}
+.cards-header-stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.cards-stat { min-width: 130px; }
+.cards-header-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.cards-header-total { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--font-display); }
+
+.credit-card-block {
+  background: var(--surface); border-radius: var(--radius-md);
+  border: 1px solid var(--border); margin-bottom: 14px;
+  overflow: hidden;
+}
+.credit-card-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; cursor: default;
+}
+.cc-chip {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  opacity: 0.9;
+}
+.cc-info { flex: 1; min-width: 0; }
+.cc-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.cc-monthly { font-size: 17px; font-weight: 700; color: var(--text); font-family: var(--font-display); }
+.cc-monthly-label { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+.cc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-icon {
+  background: var(--surface-hover); border: 1px solid var(--border);
+  border-radius: 8px; width: 32px; height: 32px;
+  color: var(--text-muted); font-size: 15px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: color .15s, background .15s;
+}
+.btn-icon:hover { color: var(--accent); background: var(--accent-soft); }
+
+.purchases-list { border-top: 1px solid var(--border); }
+
+.purchase-row {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s;
+}
+.purchase-row:last-child { border-bottom: none; }
+.purchase-row:hover { background: var(--surface-hover); }
+.purchase-row.purchase-done { opacity: .55; }
+
+.purchase-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.purchase-desc { font-size: 14px; font-weight: 500; color: var(--text); }
+.purchase-fee { font-size: 14px; font-weight: 600; flex-shrink: 0; }
+.purchase-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+.purchase-progress { margin-top: 8px; }
+.progress-bar {
+  height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;
+}
+.progress-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+.progress-label { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+
+/* ============================================================
+   FONDOS ADMINISTRADOS
+   ============================================================ */
+
+.funds-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px;
+}
+.funds-header-title { font-size: 16px; font-weight: 600; color: var(--text); }
+
+.fund-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); margin-bottom: 16px; overflow: hidden;
+}
+
+.fund-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px;
+}
+.fund-head-info { flex: 1; min-width: 0; }
+.fund-name { font-size: 16px; font-weight: 700; color: var(--text); }
+.fund-desc-text { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.fund-head-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.fund-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.fund-summary-item {
+  padding: 10px 14px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.fund-summary-item:last-child { border-right: none; }
+.fund-summary-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
+.fund-summary-val { font-size: 15px; font-weight: 700; margin-top: 2px; }
+
+.fund-movs { padding: 0; }
+
+.fund-mov-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s;
+}
+.fund-mov-row:last-child { border-bottom: none; }
+.fund-mov-row:hover { background: var(--surface-hover); }
+
+.fund-mov-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.fund-mov-info { flex: 1; min-width: 0; }
+.fund-mov-desc { font-size: 14px; font-weight: 500; color: var(--text); }
+.fund-mov-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.fund-type-badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 20px;
+  background: var(--surface-hover); color: var(--text-muted);
+  border: 1px solid var(--border); white-space: nowrap;
+}
+
+.fund-mov-right { text-align: right; flex-shrink: 0; }
+.fund-mov-amount { font-size: 14px; font-weight: 700; }
+.fund-mov-balance { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* ============================================================
+   ADMIN
+   ============================================================ */
+
+.admin-header { margin-bottom: 20px; }
+.admin-header h2 { margin: 0 0 4px; font-size: 18px; }
+.admin-subtitle { font-size: 13px; color: var(--text-muted); }
+
+.admin-user-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.admin-user-me { border-color: var(--accent); }
+.admin-user-info { flex: 1; min-width: 0; }
+.admin-user-name { font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.admin-user-email { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.admin-user-meta { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+
+.admin-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 20px; letter-spacing: .04em; text-transform: uppercase;
+}
+
+.btn-danger {
+  background: rgba(226,104,90,0.12); border: 1px solid rgba(226,104,90,0.3);
+  color: var(--negative); border-radius: 8px; padding: 6px 14px;
+  font-size: 13px; font-weight: 500; cursor: pointer; flex-shrink: 0;
+  transition: background .15s;
+}
+.btn-danger:hover { background: rgba(226,104,90,0.25); }
+
+/* Barra de balance por tarjeta */
+.card-balance-bar {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.card-balance-item {
+  padding: 10px 14px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.card-balance-item:last-child { border-right: none; }
+.card-balance-debt { background: rgba(226,104,90,0.04); }
+.card-balance-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
+.card-balance-val { font-size: 14px; font-weight: 700; margin-top: 2px; }
+
+.cc-section-label {
+  font-size: 11px; font-weight: 600; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 8px 16px 4px;
+}
+
+/* Filas de pagos */
+.payments-list { border-top: 1px solid var(--border); }
+.payment-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .12s;
+}
+.payment-row:last-child { border-bottom: none; }
+.payment-row:hover { background: var(--surface-hover); }
+.payment-icon { font-size: 16px; flex-shrink: 0; }
+.payment-info { flex: 1; min-width: 0; }
+.payment-desc { font-size: 13px; font-weight: 500; color: var(--text); }
+.payment-date { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.payment-amount { font-size: 14px; font-weight: 700; flex-shrink: 0; }
+
+/* Color picker de tarjetas */
+.color-picker { display: flex; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
+.color-dot {
+  width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent;
+  cursor: pointer; transition: border-color .15s, transform .1s;
+}
+.color-dot:hover { transform: scale(1.1); }
+.color-dot.active { border-color: var(--text); }
+
+/* Preview cuota mensual */
+.purchase-fee-preview {
+  font-size: 20px; font-weight: 700; color: var(--accent);
+  font-family: var(--font-display); padding: 6px 0;
+}
+
+================================================================
+FIN DEL ARCHIVO
+================================================================

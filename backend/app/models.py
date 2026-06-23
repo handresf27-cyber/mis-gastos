@@ -71,6 +71,7 @@ class Transaction(Base):
     # independiente de la fecha exacta del movimiento.
     month = Column(Integer, nullable=False)
     year = Column(Integer, nullable=False)
+    receipt_url = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
