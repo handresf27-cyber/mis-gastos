@@ -837,6 +837,11 @@ a { color: var(--accent); text-decoration: none; }
   font-size: 20px; font-weight: 700; color: var(--accent);
   font-family: var(--font-display); padding: 6px 0;
 }
+.purchase-date-badge {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; margin-right: 2px;
+}
 
 /* ============================================================
    SOPORTE / COMPROBANTE (receipts)

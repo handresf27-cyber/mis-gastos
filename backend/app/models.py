@@ -173,6 +173,7 @@ class CreditPurchase(Base):
     id = Column(Integer, primary_key=True, index=True)
     card_id = Column(Integer, ForeignKey("credit_cards.id"), nullable=False)
     description = Column(String, nullable=False)
+    purchase_date = Column(Date, nullable=True)
     total_amount = Column(Float, nullable=False)
     installments = Column(Integer, nullable=False, default=1)
     first_payment_month = Column(Integer, nullable=False)

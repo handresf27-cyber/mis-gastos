@@ -15,6 +15,7 @@ const state = {
 const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
 const cop = (n) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n || 0);
+const fmtDate = (iso) => { const [y, m, d] = iso.split("-"); return `${d}/${m}/${y}`; };
 
 function showToast(msg) {
   const el = document.getElementById("toast");
@@ -1313,7 +1314,7 @@ function renderCards(cards) {
                 <div class="purchase-desc">${escapeHtml(p.description)}</div>
                 <div class="purchase-fee tabular" style="color:${s.finished ? "var(--text-faint)" : card.color}">${s.finished ? "Pagada" : cop(s.monthlyFee) + "/mes"}</div>
               </div>
-              <div class="purchase-meta">${cop(p.total_amount)} · ${p.installments} cuota${p.installments > 1 ? "s" : ""} · desde ${startLabel}</div>
+              <div class="purchase-meta">${p.purchase_date ? `<span class="purchase-date-badge">${fmtDate(p.purchase_date)}</span> · ` : ""}${cop(p.total_amount)} · ${p.installments} cuota${p.installments > 1 ? "s" : ""} · desde ${startLabel}</div>
               <div class="purchase-progress">
                 <div class="progress-bar"><div class="progress-fill" style="width:${s.pct}%;background:${card.color}"></div></div>
                 <div class="progress-label">${s.paid}/${p.installments} cuotas · ${s.finished ? "Terminada" : "Falta " + cop(s.remainingAmount)}</div>
@@ -1538,6 +1539,7 @@ function openPurchaseModal(cardId, purchaseId = null) {
 
   document.getElementById("purchase-modal-title").textContent = purchase ? "Editar compra" : "Nueva compra / avance";
   document.getElementById("purchase-desc").value = purchase ? purchase.description : "";
+  document.getElementById("purchase-date").value = purchase ? (purchase.purchase_date || "") : new Date().toISOString().slice(0, 10);
   document.getElementById("purchase-amount").value = purchase ? purchase.total_amount : "";
   document.getElementById("purchase-installments").value = purchase ? purchase.installments : 1;
   document.getElementById("purchase-notes").value = purchase ? (purchase.notes || "") : "";
@@ -1576,12 +1578,13 @@ document.getElementById("purchase-modal-save").addEventListener("click", async (
   const installments = parseInt(document.getElementById("purchase-installments").value) || 1;
   const first_payment_month = parseInt(document.getElementById("purchase-month").value);
   const first_payment_year = parseInt(document.getElementById("purchase-year").value);
+  const purchase_date = document.getElementById("purchase-date").value || null;
   const notes = document.getElementById("purchase-notes").value.trim() || null;
 
   if (!description) { showToast("Escribe una descripción"); return; }
   if (!total_amount || total_amount <= 0) { showToast("Ingresa un valor mayor a 0"); return; }
 
-  const body = { description, total_amount, installments, first_payment_month, first_payment_year, notes };
+  const body = { description, purchase_date, total_amount, installments, first_payment_month, first_payment_year, notes };
   try {
     if (_editingPurchaseId) {
       await Api.updatePurchase(_editingPurchaseCardId, _editingPurchaseId, body);

@@ -179,6 +179,7 @@ class CategoryOut(CategoryCreate):
 
 class CreditPurchaseCreate(BaseModel):
     description: str
+    purchase_date: Optional[date] = None
     total_amount: float = Field(gt=0)
     installments: int = Field(ge=1, default=1)
     first_payment_month: int = Field(ge=1, le=12)
@@ -188,6 +189,7 @@ class CreditPurchaseCreate(BaseModel):
 
 class CreditPurchaseUpdate(BaseModel):
     description: Optional[str] = None
+    purchase_date: Optional[date] = None
     total_amount: Optional[float] = None
     installments: Optional[int] = None
     first_payment_month: Optional[int] = None
@@ -199,6 +201,7 @@ class CreditPurchaseOut(BaseModel):
     id: int
     card_id: int
     description: str
+    purchase_date: Optional[date] = None
     total_amount: float
     installments: int
     first_payment_month: int
