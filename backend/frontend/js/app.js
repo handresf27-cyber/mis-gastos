@@ -184,7 +184,7 @@ function refreshCurrentView() {
   document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
   renderMonthGrid();
   if (state.activeView === "home") loadHome();
-  else if (state.activeView === "metrics") loadMetrics(state.compYear || 2026);
+  else if (state.activeView === "metrics") loadAnalytics();
 }
 
 // ============ HOME / CONCILIACIÓN ============

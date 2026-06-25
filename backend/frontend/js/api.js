@@ -35,7 +35,12 @@ const Api = {
     try { data = await res.json(); } catch (_) { /* sin contenido */ }
 
     if (!res.ok) {
-      const msg = (data && data.detail) || "Algo salió mal, intenta de nuevo";
+      let msg = "Algo salió mal, intenta de nuevo";
+      if (data?.detail) {
+        if (typeof data.detail === "string") msg = data.detail;
+        else if (Array.isArray(data.detail)) msg = data.detail.map((e) => e.msg || JSON.stringify(e)).join(" · ");
+        else msg = String(data.detail);
+      }
       throw new Error(msg);
     }
     return data;
@@ -172,19 +177,30 @@ const Api = {
     return this.request(`/api/credit-cards/${cardId}/payments/${paymentId}`, { method: "DELETE" });
   },
 
-  uploadReceipt(txId, file) {
+  async uploadReceipt(txId, file) {
     const form = new FormData();
     form.append("file", file);
-    return fetch(`${API_BASE}/api/transactions/${txId}/receipt`, {
+    const res = await fetch(`${API_BASE}/api/transactions/${txId}/receipt`, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.token}` },
       body: form,
-    }).then(async (res) => {
-      const data = await res.json().catch(() => null);
-      if (res.status === 401) { this.setToken(null); window.dispatchEvent(new Event("gastos:unauthorized")); throw new Error("Sesión expirada"); }
-      if (!res.ok) throw new Error((data && data.detail) || "Error al subir el archivo");
-      return data;
     });
+    const data = await res.json().catch(() => null);
+    if (res.status === 401) {
+      this.setToken(null);
+      window.dispatchEvent(new Event("gastos:unauthorized"));
+      throw new Error("Sesión expirada");
+    }
+    if (!res.ok) {
+      let msg = "Error al subir el archivo";
+      if (data?.detail) {
+        if (typeof data.detail === "string") msg = data.detail;
+        else if (Array.isArray(data.detail)) msg = data.detail.map((e) => e.msg || JSON.stringify(e)).join(" · ");
+        else msg = String(data.detail);
+      }
+      throw new Error(msg);
+    }
+    return data;
   },
   deleteReceipt(txId) {
     return this.request(`/api/transactions/${txId}/receipt`, { method: "DELETE" });
