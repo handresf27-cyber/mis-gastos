@@ -1275,11 +1275,12 @@ function renderCards(cards) {
   cards.forEach((card) => {
     const totalPurchases = card.purchases.reduce((s, p) => s + p.total_amount, 0);
     const totalPaid = (card.payments || []).reduce((s, p) => s + p.amount, 0);
-    grandDebt += Math.max(0, totalPurchases - totalPaid);
-    card.purchases.forEach((p) => {
-      const s = purchaseStatus(p);
-      if (!s.finished) grandMonthly += s.monthlyFee;
-    });
+    const cardBalance = Math.max(0, totalPurchases - totalPaid);
+    grandDebt += cardBalance;
+    const cardFees = card.purchases
+      .filter((p) => !purchaseStatus(p).finished)
+      .reduce((s, p) => s + purchaseStatus(p).monthlyFee, 0);
+    grandMonthly += Math.min(cardFees, cardBalance);
   });
   document.getElementById("cards-total-monthly").textContent = cop(grandMonthly);
   document.getElementById("cards-total-debt").textContent = cop(grandDebt);
@@ -1297,7 +1298,10 @@ function renderCards(cards) {
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
     const balanceDue = totalPurchases - totalPaid;
     const activePurchases = card.purchases.filter((p) => !purchaseStatus(p).finished);
-    const cardMonthly = activePurchases.reduce((s, p) => s + purchaseStatus(p).monthlyFee, 0);
+    const cardMonthly = Math.min(
+      activePurchases.reduce((s, p) => s + purchaseStatus(p).monthlyFee, 0),
+      Math.max(0, balanceDue)
+    );
 
     const purchasesHtml = card.purchases.length
       ? card.purchases.map((p) => {
@@ -1344,6 +1348,7 @@ function renderCards(cards) {
             <button class="btn-icon pay-card-btn" data-card-id="${card.id}" title="Registrar pago">💳</button>
             <button class="btn-icon add-purchase-btn" data-card-id="${card.id}" title="Agregar compra">+</button>
             <button class="btn-icon edit-card-btn" data-card-id="${card.id}" title="Editar tarjeta">✎</button>
+            <button class="btn-icon cc-toggle-btn" data-card-id="${card.id}" title="Expandir / colapsar">▾</button>
           </div>
         </div>
 
@@ -1384,6 +1389,13 @@ function renderCards(cards) {
   );
   list.querySelectorAll(".payment-row").forEach((row) =>
     row.addEventListener("click", () => openPaymentModal(parseInt(row.dataset.cardId), parseInt(row.dataset.paymentId)))
+  );
+  list.querySelectorAll(".cc-toggle-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const block = document.getElementById(`card-block-${btn.dataset.cardId}`);
+      const collapsed = block.classList.toggle("cc-collapsed");
+      btn.textContent = collapsed ? "▸" : "▾";
+    })
   );
 }
 

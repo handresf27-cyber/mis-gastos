@@ -667,6 +667,11 @@ a { color: var(--accent); text-decoration: none; }
 }
 .btn-icon:hover { color: var(--accent); background: var(--accent-soft); }
 
+/* Colapso de tarjetas */
+.credit-card-block.cc-collapsed .purchases-list,
+.credit-card-block.cc-collapsed .payments-list,
+.credit-card-block.cc-collapsed .cc-section-label { display: none; }
+
 .purchases-list { border-top: 1px solid var(--border); }
 
 .purchase-row {
