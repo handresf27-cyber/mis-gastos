@@ -345,6 +345,16 @@ function renderFixedPlans(plans) {
     `).join("");
   }
 
+  // Total footer
+  const totalPlanned = plans.reduce((s, p) => s + p.amount, 0);
+  const totalPaid = plans.filter((p) => p.is_executed).reduce((s, p) => s + p.amount, 0)
+                  + fixedTxs.reduce((s, t) => s + t.amount, 0);
+  html += `<div class="expense-total-bar">
+    <span class="et-label">Planeado</span><span class="et-amount tabular">${cop(totalPlanned)}</span>
+    <span class="et-sep">·</span>
+    <span class="et-label">Pagado</span><span class="et-amount tabular">${cop(totalPaid)}</span>
+  </div>`;
+
   list.innerHTML = html;
 
   list.querySelectorAll(".fp-check").forEach((btn) => {
@@ -562,6 +572,13 @@ function renderTxList(txs, summary) {
   expenses.forEach((t) => { (groups[t.date] = groups[t.date] || []).push(t); });
   const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
+  const totalVarExpenses = allVars.filter((t) => t.type === "variable").reduce((s, t) => s + t.amount, 0);
+  const totalExtraIncome = allVars.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  const varFooter = `<div class="expense-total-bar">
+    ${totalExtraIncome > 0 ? `<span class="et-label">Ingresos extra</span><span class="et-amount tabular positive">+${cop(totalExtraIncome)}</span><span class="et-sep">·</span>` : ""}
+    <span class="et-label">Gastos</span><span class="et-amount tabular">${cop(totalVarExpenses)}</span>
+  </div>`;
+
   txList.innerHTML = dates.map((d) => `
     <div class="tx-group">
       <div class="tx-date-label">${dateLabel(d)}</div>
@@ -579,7 +596,7 @@ function renderTxList(txs, summary) {
         </div>
       `).join("")}
     </div>
-  `).join("");
+  `).join("") + varFooter;
 
   txList.querySelectorAll(".tx-row").forEach((row) => {
     row.addEventListener("click", () => openTxModal(parseInt(row.dataset.id)));
