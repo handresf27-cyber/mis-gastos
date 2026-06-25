@@ -300,17 +300,28 @@ function renderFixedPlans(plans) {
   }
 
   // Checklist de planes (con checkboxes)
-  let html = visiblePlans.map((p) => `
+  let html = visiblePlans.map((p) => {
+    let payInfo = "";
+    if (p.is_executed) {
+      const parts = [];
+      if (p.payment_date) parts.push("Pagado " + fmtDate(p.payment_date));
+      if (p.payment_notes) parts.push(escapeHtml(p.payment_notes));
+      if (parts.length) payInfo = `<div class="fp-pay-info">${parts.join(" · ")}</div>`;
+    }
+    return `
     <div class="fp-item ${p.is_executed ? "fp-done" : ""}" data-id="${p.id}">
-      <button class="fp-check" data-id="${p.id}" title="${p.is_executed ? "Marcar pendiente" : "Marcar ejecutado"}">
+      <button class="fp-check" data-id="${p.id}" title="${p.is_executed ? "Marcar pendiente" : "Registrar pago"}">
         ${p.is_executed ? "✓" : ""}
       </button>
-      <span class="fp-name">${escapeHtml(p.name)}</span>
+      <div class="fp-name-wrap">
+        <span class="fp-name">${escapeHtml(p.name)}</span>
+        ${payInfo}
+      </div>
       <span class="fp-amount tabular">${cop(p.amount)}</span>
       <button class="fp-edit" data-id="${p.id}" title="Editar">✎</button>
       <button class="fp-del" data-id="${p.id}" title="Eliminar">✕</button>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
 
   // Transacciones fijas (grupos por fecha, clicables para editar)
   if (visibleTxs.length) {
@@ -338,13 +349,21 @@ function renderFixedPlans(plans) {
 
   list.querySelectorAll(".fp-check").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      try {
-        await Api.toggleFixedPlan(parseInt(btn.dataset.id));
-        const plans = await Api.listFixedPlans(state.year, state.month);
-        state.fixedPlans = plans;
-        renderFixedPlans(plans);
-        loadHome();
-      } catch (err) { showToast(err.message); }
+      const planId = parseInt(btn.dataset.id);
+      const plan = state.fixedPlans.find((p) => p.id === planId);
+      if (!plan) return;
+
+      if (!plan.is_executed) {
+        openFpPayModal(planId, plan.name);
+      } else {
+        try {
+          await Api.toggleFixedPlan(planId, {});
+          const plans = await Api.listFixedPlans(state.year, state.month);
+          state.fixedPlans = plans;
+          renderFixedPlans(plans);
+          loadHome();
+        } catch (err) { showToast(err.message); }
+      }
     });
   });
 
@@ -385,6 +404,39 @@ function renderFixedPlans(plans) {
     row.addEventListener("click", () => openTxModal(parseInt(row.dataset.txid)));
   });
 }
+
+// ── Modal: registrar pago de gasto fijo ──────────────────────────────────────
+let _fpPayPlanId = null;
+
+function openFpPayModal(planId, planName) {
+  _fpPayPlanId = planId;
+  document.getElementById("fp-pay-plan-label").textContent = planName;
+  document.getElementById("fp-pay-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("fp-pay-notes").value = "";
+  document.getElementById("modal-fp-pay").classList.remove("hidden");
+  setTimeout(() => document.getElementById("fp-pay-notes").focus(), 80);
+}
+
+function closeFpPayModal() {
+  document.getElementById("modal-fp-pay").classList.add("hidden");
+}
+
+document.getElementById("fp-pay-close").addEventListener("click", closeFpPayModal);
+document.getElementById("fp-pay-cancel").addEventListener("click", closeFpPayModal);
+
+document.getElementById("fp-pay-confirm").addEventListener("click", async () => {
+  const date = document.getElementById("fp-pay-date").value;
+  const notes = document.getElementById("fp-pay-notes").value.trim() || null;
+  if (!date) { showToast("Selecciona una fecha de pago"); return; }
+  closeFpPayModal();
+  try {
+    await Api.toggleFixedPlan(_fpPayPlanId, { date, notes });
+    const plans = await Api.listFixedPlans(state.year, state.month);
+    state.fixedPlans = plans;
+    renderFixedPlans(plans);
+    loadHome();
+  } catch (err) { showToast(err.message); }
+});
 
 // Filtro en tiempo real para gastos fijos
 document.getElementById("filter-fixed").addEventListener("input", () => {

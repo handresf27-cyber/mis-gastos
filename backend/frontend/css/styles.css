@@ -697,6 +697,10 @@ a { color: var(--accent); text-decoration: none; }
 .fp-item.fp-done .fp-name { text-decoration: line-through; color: var(--text-faint); }
 .fp-item.fp-done .fp-amount { color: var(--positive); }
 
+.fp-name-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.fp-pay-info { font-size: 0.71rem; color: var(--text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-pay-plan-label { font-weight: 600; font-size: 0.95rem; margin-bottom: 14px; color: var(--text); padding: 8px 12px; background: var(--surface); border-radius: 8px; }
+
 .fp-check {
   width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
   border: 2px solid var(--border); background: transparent;
@@ -706,7 +710,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .fp-done .fp-check { border-color: var(--positive); background: rgba(95,184,122,0.15); }
 
-.fp-name { flex: 1; font-size: 14px; }
+.fp-name { font-size: 14px; }
 .fp-amount { font-size: 14px; color: var(--text-muted); min-width: 80px; text-align: right; }
 
 .fp-edit, .fp-del {

@@ -92,6 +92,8 @@ class FixedExpensePlan(Base):
     is_executed = Column(Boolean, default=False, nullable=False)
     # Cuando se marca ejecutado, se crea una Transaction y se guarda su id aquí.
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    payment_date = Column(Date, nullable=True)
+    payment_notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="fixed_plans")

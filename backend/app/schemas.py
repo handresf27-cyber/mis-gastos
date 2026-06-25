@@ -148,6 +148,11 @@ class FixedPlanUpdate(BaseModel):
     amount: Optional[float] = None
 
 
+class FixedPlanToggle(BaseModel):
+    date: Optional[_date] = None
+    notes: Optional[str] = None
+
+
 class FixedPlanOut(BaseModel):
     id: int
     name: str
@@ -156,6 +161,8 @@ class FixedPlanOut(BaseModel):
     year: int
     is_executed: bool
     transaction_id: Optional[int] = None
+    payment_date: Optional[_date] = None
+    payment_notes: Optional[str] = None
 
     class Config:
         from_attributes = True

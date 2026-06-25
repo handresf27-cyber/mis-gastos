@@ -581,6 +581,29 @@
     </div>
   </div>
 
+  <!-- ======= MODAL: registrar pago de gasto fijo ======= -->
+  <div id="modal-fp-pay" class="modal hidden">
+    <div class="modal-card" style="max-width:360px">
+      <div class="modal-head">
+        <h3>Registrar pago</h3>
+        <button class="modal-close" id="fp-pay-close">&times;</button>
+      </div>
+      <div class="fp-pay-plan-label" id="fp-pay-plan-label"></div>
+      <div class="field">
+        <label>Fecha de pago</label>
+        <input type="date" id="fp-pay-date" />
+      </div>
+      <div class="field">
+        <label>Detalles (opcional)</label>
+        <textarea id="fp-pay-notes" rows="2" placeholder="Ej: pagado con débito, referencia 123…"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fp-pay-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="fp-pay-confirm">Confirmar pago</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ======= MODAL: editar saldos (conciliación) ======= -->
   <div id="modal-balance" class="modal hidden">
     <div class="modal-card">

@@ -59,7 +59,7 @@ def update_plan(plan_id: int, body: schemas.FixedPlanUpdate, db: Session = Depen
 
 
 @router.patch("/{plan_id}/toggle", response_model=schemas.FixedPlanOut)
-def toggle_executed(plan_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def toggle_executed(plan_id: int, body: schemas.FixedPlanToggle, db: Session = Depends(get_db), user=Depends(get_current_user)):
     plan = db.query(models.FixedExpensePlan).filter(
         models.FixedExpensePlan.id == plan_id,
         models.FixedExpensePlan.user_id == user.id,
@@ -68,8 +68,12 @@ def toggle_executed(plan_id: int, db: Session = Depends(get_db), user=Depends(ge
         raise HTTPException(404, "Plan no encontrado")
 
     if not plan.is_executed:
-        # Crear la transacción de gasto fijo
-        tx_date = date.today() if (date.today().year == plan.year and date.today().month == plan.month) else date(plan.year, plan.month, 1)
+        # Fecha de pago: la que ingresó el usuario o hoy/primer día del mes
+        if body.date:
+            tx_date = body.date
+        else:
+            tx_date = date.today() if (date.today().year == plan.year and date.today().month == plan.month) else date(plan.year, plan.month, 1)
+
         tx = models.Transaction(
             user_id=user.id,
             description=plan.name,
@@ -85,6 +89,8 @@ def toggle_executed(plan_id: int, db: Session = Depends(get_db), user=Depends(ge
         db.flush()
         plan.transaction_id = tx.id
         plan.is_executed = True
+        plan.payment_date = tx_date
+        plan.payment_notes = body.notes
     else:
         # Revertir: eliminar la transacción vinculada
         if plan.transaction_id:
@@ -93,6 +99,8 @@ def toggle_executed(plan_id: int, db: Session = Depends(get_db), user=Depends(ge
                 db.delete(tx)
         plan.transaction_id = None
         plan.is_executed = False
+        plan.payment_date = None
+        plan.payment_notes = None
 
     db.commit()
     db.refresh(plan)

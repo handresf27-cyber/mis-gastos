@@ -108,8 +108,8 @@ const Api = {
   updateFixedPlan(id, body) {
     return this.request(`/api/fixed-plans/${id}`, { method: "PATCH", body });
   },
-  toggleFixedPlan(id) {
-    return this.request(`/api/fixed-plans/${id}/toggle`, { method: "PATCH" });
+  toggleFixedPlan(id, body = {}) {
+    return this.request(`/api/fixed-plans/${id}/toggle`, { method: "PATCH", body });
   },
   deleteFixedPlan(id) {
     return this.request(`/api/fixed-plans/${id}`, { method: "DELETE" });
