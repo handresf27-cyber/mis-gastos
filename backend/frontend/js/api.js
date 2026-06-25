@@ -35,10 +35,14 @@ const Api = {
     try { data = await res.json(); } catch (_) { /* sin contenido */ }
 
     if (!res.ok) {
+      if (data?.detail) console.error("[API error]", JSON.stringify(data.detail));
       let msg = "Algo salió mal, intenta de nuevo";
       if (data?.detail) {
         if (typeof data.detail === "string") msg = data.detail;
-        else if (Array.isArray(data.detail)) msg = data.detail.map((e) => e.msg || JSON.stringify(e)).join(" · ");
+        else if (Array.isArray(data.detail)) msg = data.detail.map((e) => {
+          const field = Array.isArray(e.loc) ? e.loc.slice(-1)[0] : "";
+          return field ? `${field}: ${e.msg}` : e.msg;
+        }).join(" · ");
         else msg = String(data.detail);
       }
       throw new Error(msg);

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date as _date, datetime
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr, Field
 from .models import TransactionType
@@ -48,7 +48,7 @@ class Token(BaseModel):
 # ---------- Transactions ----------
 
 class TransactionBase(BaseModel):
-    date: date
+    date: _date
     description: str
     amount: float
     type: TransactionType = TransactionType.variable
@@ -61,7 +61,7 @@ class TransactionCreate(TransactionBase):
 
 
 class TransactionUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[_date] = None
     description: Optional[str] = None
     amount: Optional[float] = None
     type: Optional[TransactionType] = None
@@ -179,7 +179,7 @@ class CategoryOut(CategoryCreate):
 
 class CreditPurchaseCreate(BaseModel):
     description: str
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[_date] = None
     total_amount: float = Field(gt=0)
     installments: int = Field(ge=1, default=1)
     first_payment_month: int = Field(ge=1, le=12)
@@ -189,7 +189,7 @@ class CreditPurchaseCreate(BaseModel):
 
 class CreditPurchaseUpdate(BaseModel):
     description: Optional[str] = None
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[_date] = None
     total_amount: Optional[float] = None
     installments: Optional[int] = None
     first_payment_month: Optional[int] = None
@@ -201,7 +201,7 @@ class CreditPurchaseOut(BaseModel):
     id: int
     card_id: int
     description: str
-    purchase_date: Optional[date] = None
+    purchase_date: Optional[_date] = None
     total_amount: float
     installments: int
     first_payment_month: int
@@ -223,13 +223,13 @@ class CreditCardUpdate(BaseModel):
 
 
 class CreditPaymentCreate(BaseModel):
-    date: date
+    date: _date
     amount: float = Field(gt=0)
     notes: Optional[str] = None
 
 
 class CreditPaymentUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[_date] = None
     amount: Optional[float] = None
     notes: Optional[str] = None
 
@@ -237,7 +237,7 @@ class CreditPaymentUpdate(BaseModel):
 class CreditPaymentOut(BaseModel):
     id: int
     card_id: int
-    date: date
+    date: _date
     amount: float
     notes: Optional[str] = None
 
@@ -269,7 +269,7 @@ class FundUpdate(BaseModel):
 
 
 class FundMovementCreate(BaseModel):
-    date: date
+    date: _date
     amount: float          # positivo = entra, negativo = sale
     move_type: str = "Otros"
     description: str
@@ -277,7 +277,7 @@ class FundMovementCreate(BaseModel):
 
 
 class FundMovementUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[_date] = None
     amount: Optional[float] = None
     move_type: Optional[str] = None
     description: Optional[str] = None
@@ -287,7 +287,7 @@ class FundMovementUpdate(BaseModel):
 class FundMovementOut(BaseModel):
     id: int
     fund_id: int
-    date: date
+    date: _date
     amount: float
     move_type: str
     description: str
