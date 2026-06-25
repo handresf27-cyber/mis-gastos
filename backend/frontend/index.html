@@ -75,7 +75,7 @@
         <strong>Mis Gastos</strong>
       </div>
       <button class="nav-item active" data-view="home"><span class="ic">🏠</span> Inicio</button>
-      <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Comparativos</button>
+      <button class="nav-item" data-view="metrics"><span class="ic">📊</span> Analítica</button>
       <button class="nav-item" data-view="cards"><span class="ic">💳</span> Tarjetas</button>
       <button class="nav-item" data-view="funds"><span class="ic">🏦</span> Fondos</button>
       <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
@@ -209,8 +209,41 @@
         <!-- METRICS -->
         <!-- COMPARATIVOS -->
         <section id="view-metrics" class="view hidden">
-          <div class="comp-year-tabs" id="comp-year-tabs"></div>
 
+          <!-- Navegador de mes para analítica -->
+          <div class="analytics-month-nav">
+            <button class="btn-icon" id="analytics-prev-month">‹</button>
+            <span id="analytics-month-label"></span>
+            <button class="btn-icon" id="analytics-next-month">›</button>
+          </div>
+
+          <!-- KPIs -->
+          <div class="kpi-grid" id="kpi-grid"></div>
+
+          <!-- Alertas -->
+          <div id="analytics-alerts"></div>
+
+          <!-- Donut + Hormiga -->
+          <div class="analytics-two-col">
+            <div class="chart-card">
+              <div class="chart-card-title">¿En qué gasté?</div>
+              <div class="chart-wrap chart-wrap-donut"><canvas id="chart-donut"></canvas></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-card-title">Gastos hormiga 🐜</div>
+              <div id="hormiga-list"></div>
+            </div>
+          </div>
+
+          <!-- Compromisos fijos -->
+          <div class="chart-card">
+            <div class="chart-card-title">Compromisos fijos del mes</div>
+            <div id="fixed-commitments-list"></div>
+          </div>
+
+          <!-- Histórico anual -->
+          <div class="analytics-section-divider">Histórico anual</div>
+          <div class="comp-year-tabs" id="comp-year-tabs"></div>
           <div class="chart-card">
             <div class="comp-chart-head">
               <h3 id="comp-chart-title">Fijos vs Variables — 2026</h3>
@@ -221,7 +254,6 @@
             </div>
             <div class="chart-wrap"><canvas id="chart-comparison"></canvas></div>
           </div>
-
           <div class="comp-table-wrap">
             <table class="comp-table" id="comp-table">
               <thead>
@@ -290,7 +322,7 @@
 
       <nav class="bottom-nav">
         <button class="active" data-view="home"><span class="ic">🏠</span>Inicio</button>
-        <button data-view="metrics"><span class="ic">📊</span>Comparativos</button>
+        <button data-view="metrics"><span class="ic">📊</span>Analítica</button>
         <button data-view="cards"><span class="ic">💳</span>Tarjetas</button>
         <button data-view="funds"><span class="ic">🏦</span>Fondos</button>
         <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>

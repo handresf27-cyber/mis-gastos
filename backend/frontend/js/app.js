@@ -3,13 +3,15 @@ const state = {
   user: null,
   year: new Date().getFullYear(),
   month: new Date().getMonth() + 1,
-  months: [],          // [{year, month}] disponibles + mes actual
+  months: [],
   transactions: [],
   categories: [],
   fixedPlans: [],
   editingTxId: null,
   activeView: "home",
   charts: {},
+  analyticsYear: new Date().getFullYear(),
+  analyticsMonth: new Date().getMonth() + 1,
 };
 
 const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -104,7 +106,7 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
 
-  const titles = { home: "Inicio", metrics: "Comparativos", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
+  const titles = { home: "Inicio", metrics: "Analítica", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
   document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
 
   // El navegador de meses solo aplica a home
@@ -112,7 +114,7 @@ function switchView(view) {
   document.getElementById("month-nav").style.display = monthDependentViews.includes(view) ? "" : "none";
 
   if (view === "home") loadHome();
-  if (view === "metrics") loadMetrics();
+  if (view === "metrics") loadAnalytics();
   if (view === "cards") loadCards();
   if (view === "funds") loadFunds();
   if (view === "admin") loadAdmin();
@@ -542,9 +544,223 @@ function escapeHtml(str) {
 const CHART_PALETTE = ["#d4a843", "#6c8fc7", "#5fb87a", "#e2685a", "#a47bc7", "#5fb8b0", "#c78a5f", "#8d97a7"];
 
 const COMP_START_YEAR = 2026;
+const HORMIGA_THRESHOLD = 30000;
+const DONUT_COLORS = ["#6c8fc7","#e2685a","#5bbf8a","#f0a44b","#9b7ed4","#4bb8cc","#e8784d","#7dba5e","#c46faa","#8d97a7"];
 
 function destroyChart(key) {
   if (state.charts[key]) { state.charts[key].destroy(); delete state.charts[key]; }
+}
+
+function prevMonthOf(year, month) {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+}
+
+// ============================================================
+// ANALÍTICA
+// ============================================================
+
+async function loadAnalytics(year, month) {
+  if (year !== undefined) state.analyticsYear = year;
+  if (month !== undefined) state.analyticsMonth = month;
+  const y = state.analyticsYear, m = state.analyticsMonth;
+
+  // Actualizar nav de mes
+  document.getElementById("analytics-month-label").textContent =
+    `${MONTH_NAMES[m - 1].charAt(0).toUpperCase() + MONTH_NAMES[m - 1].slice(1)} ${y}`;
+
+  const prev = prevMonthOf(y, m);
+
+  const [summary, prevSummary, categories, txs, plans] = await Promise.all([
+    Api.summary(y, m).catch(() => null),
+    Api.summary(prev.year, prev.month).catch(() => null),
+    Api.categoryBreakdown(y, m).catch(() => []),
+    Api.listTransactions(y, m).catch(() => []),
+    Api.listFixedPlans(y, m).catch(() => []),
+  ]);
+
+  if (summary) {
+    renderKPIs(summary, prevSummary, categories);
+    renderAlerts(summary, prevSummary, txs);
+    renderDonut(categories);
+    renderHormiga(txs);
+    renderFixedCommitments(plans, summary);
+  }
+
+  // Histórico anual
+  loadMetrics(state.compYear || y);
+}
+
+// Mes anterior / siguiente en analítica
+document.getElementById("analytics-prev-month").addEventListener("click", () => {
+  const p = prevMonthOf(state.analyticsYear, state.analyticsMonth);
+  loadAnalytics(p.year, p.month);
+});
+document.getElementById("analytics-next-month").addEventListener("click", () => {
+  let { analyticsYear: y, analyticsMonth: m } = state;
+  m === 12 ? (y += 1, m = 1) : m++;
+  loadAnalytics(y, m);
+});
+
+function renderKPIs(summary, prevSummary, categories) {
+  const net = summary.net_income || 0;
+  const expenses = summary.total_expenses || 0;
+  const saved = net - expenses;
+  const savingsRate = net > 0 ? (saved / net * 100) : 0;
+  const srColor = savingsRate >= 20 ? "kpi-green" : savingsRate >= 10 ? "kpi-yellow" : "kpi-red";
+
+  const today = new Date();
+  const isCurrentMonth = state.analyticsYear === today.getFullYear() && state.analyticsMonth === (today.getMonth() + 1);
+  const daysElapsed = isCurrentMonth ? today.getDate() : 30;
+  const dailyAvg = summary.total_variable / daysElapsed;
+
+  let varChange = null, varClass = "";
+  if (prevSummary && prevSummary.total_expenses > 0) {
+    varChange = ((expenses - prevSummary.total_expenses) / prevSummary.total_expenses * 100);
+    varClass = varChange > 0 ? "kpi-red" : "kpi-green";
+  }
+
+  const topCat = categories.length > 0
+    ? categories.reduce((a, b) => b.total > a.total ? b : a)
+    : null;
+
+  document.getElementById("kpi-grid").innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Tasa de ahorro</div>
+      <div class="kpi-value ${srColor}">${savingsRate.toFixed(1)}%</div>
+      <div class="kpi-sub">${saved >= 0 ? cop(saved) + " ahorrado" : cop(Math.abs(saved)) + " en déficit"}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Gasto diario promedio</div>
+      <div class="kpi-value">${cop(dailyAvg)}</div>
+      <div class="kpi-sub">en ${daysElapsed} días</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">vs mes anterior</div>
+      <div class="kpi-value ${varClass}">${varChange !== null ? (varChange > 0 ? "+" : "") + varChange.toFixed(1) + "%" : "—"}</div>
+      <div class="kpi-sub">${varChange !== null ? cop(expenses) + " este mes" : "sin datos previos"}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Categoría top</div>
+      <div class="kpi-value kpi-text">${topCat ? escapeHtml(topCat.category) : "—"}</div>
+      <div class="kpi-sub">${topCat ? cop(topCat.total) : ""}</div>
+    </div>
+  `;
+}
+
+function renderAlerts(summary, prevSummary, txs) {
+  const net = summary.net_income || 0;
+  const expenses = summary.total_expenses || 0;
+  const savingsRate = net > 0 ? ((net - expenses) / net * 100) : 0;
+  const alerts = [];
+
+  if (net > 0 && expenses > net) {
+    alerts.push({ cls: "alert-danger", icon: "🚨", text: `Gastaste ${cop(expenses - net)} más de lo que ganaste este mes.` });
+  } else if (savingsRate < 10 && net > 0) {
+    alerts.push({ cls: "alert-warning", icon: "⚠️", text: `Tasa de ahorro muy baja: ${savingsRate.toFixed(0)}%. Lo recomendado es al menos 20%.` });
+  } else if (savingsRate >= 30) {
+    alerts.push({ cls: "alert-success", icon: "✅", text: `Excelente tasa de ahorro: ${savingsRate.toFixed(0)}%.` });
+  }
+
+  if (prevSummary && prevSummary.total_expenses > 0) {
+    const chg = ((expenses - prevSummary.total_expenses) / prevSummary.total_expenses * 100);
+    if (chg > 25) alerts.push({ cls: "alert-warning", icon: "📈", text: `Los gastos totales subieron ${chg.toFixed(0)}% vs el mes anterior.` });
+    else if (chg < -15) alerts.push({ cls: "alert-success", icon: "📉", text: `Los gastos totales bajaron ${Math.abs(chg).toFixed(0)}% vs el mes anterior. ¡Buen trabajo!` });
+  }
+
+  const hormigaTx = txs.filter(t => t.type === "variable" && t.amount > 0 && t.amount < HORMIGA_THRESHOLD);
+  const hormigaTotal = hormigaTx.reduce((s, t) => s + t.amount, 0);
+  if (hormigaTx.length >= 5) {
+    const pct = net > 0 ? (hormigaTotal / net * 100).toFixed(1) : "?";
+    alerts.push({ cls: "alert-warning", icon: "🐜", text: `${hormigaTx.length} gastos hormiga suman ${cop(hormigaTotal)} — ${pct}% de tu ingreso neto.` });
+  }
+
+  const fixedPct = net > 0 ? (summary.total_fixed / net * 100) : 0;
+  if (fixedPct > 65) alerts.push({ cls: "alert-warning", icon: "🔒", text: `Los compromisos fijos consumen el ${fixedPct.toFixed(0)}% de tu ingreso neto.` });
+
+  const el = document.getElementById("analytics-alerts");
+  el.innerHTML = alerts.length
+    ? alerts.map(a => `<div class="alert-item ${a.cls}"><span class="alert-icon">${a.icon}</span><span>${a.text}</span></div>`).join("")
+    : "";
+}
+
+function renderDonut(categories) {
+  destroyChart("donut");
+  const varCats = categories.filter(c => c.total > 0);
+  const el = document.getElementById("chart-donut");
+  if (!varCats.length) { el.parentElement.innerHTML += `<div class="hormiga-empty">Sin gastos variables este mes</div>`; return; }
+  const total = varCats.reduce((s, c) => s + c.total, 0);
+  state.charts.donut = new Chart(el, {
+    type: "doughnut",
+    data: {
+      labels: varCats.map(c => c.category),
+      datasets: [{
+        data: varCats.map(c => c.total),
+        backgroundColor: DONUT_COLORS.slice(0, varCats.length),
+        borderWidth: 0,
+        hoverOffset: 6,
+      }],
+    },
+    options: {
+      cutout: "62%",
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom", labels: { color: "#8d97a7", font: { size: 11 }, boxWidth: 12, padding: 10 } },
+        tooltip: { callbacks: { label: (ctx) => ` ${cop(ctx.parsed)} · ${(ctx.parsed / total * 100).toFixed(1)}%` } },
+      },
+    },
+  });
+}
+
+function renderHormiga(txs) {
+  const hormiga = txs.filter(t => t.type === "variable" && t.amount > 0 && t.amount < HORMIGA_THRESHOLD);
+  const total = hormiga.reduce((s, t) => s + t.amount, 0);
+  const byCategory = {};
+  hormiga.forEach(t => { const c = t.category || "Otros"; byCategory[c] = (byCategory[c] || 0) + t.amount; });
+  const sorted = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+
+  const el = document.getElementById("hormiga-list");
+  if (!hormiga.length) {
+    el.innerHTML = `<div class="hormiga-empty">Sin gastos hormiga este mes 🎉<br><small>Gastos menores a ${cop(HORMIGA_THRESHOLD)}</small></div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="hormiga-summary">${hormiga.length} gastos · <strong>${cop(total)}</strong> en total</div>
+    ${sorted.map(([cat, amt]) => `
+      <div class="hormiga-row">
+        <span class="hormiga-cat">${escapeHtml(cat)}</span>
+        <span class="hormiga-amt">${cop(amt)}</span>
+      </div>`).join("")}
+    <div class="hormiga-note">Gastos menores a ${cop(HORMIGA_THRESHOLD)}</div>
+  `;
+}
+
+function renderFixedCommitments(plans, summary) {
+  const net = summary.net_income || 1;
+  const total = plans.reduce((s, p) => s + p.amount, 0);
+  const pct = net > 0 ? Math.round(total / net * 100) : 0;
+  const executed = plans.filter(p => p.is_executed).length;
+  const el = document.getElementById("fixed-commitments-list");
+
+  if (!plans.length) {
+    el.innerHTML = `<div class="hormiga-empty">Sin gastos fijos registrados este mes</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="commitments-header">
+      <span>${cop(total)} comprometidos — <strong>${pct}%</strong> del ingreso neto</span>
+      <span class="commitments-progress">${executed}/${plans.length} ejecutados</span>
+    </div>
+    ${[...plans].sort((a, b) => b.amount - a.amount).map(p => {
+      const itemPct = net > 0 ? Math.round(p.amount / net * 100) : 0;
+      return `<div class="commitment-row${p.is_executed ? " done" : ""}">
+        <span class="commitment-name">${escapeHtml(p.name)}</span>
+        <div class="commitment-bar-wrap"><div class="commitment-bar" style="width:${Math.min(itemPct * 1.5, 100)}%"></div></div>
+        <span class="commitment-pct">${itemPct}%</span>
+        <span class="commitment-amt">${cop(p.amount)}</span>
+        <span class="commitment-check">${p.is_executed ? "✓" : ""}</span>
+      </div>`;
+    }).join("")}
+  `;
 }
 
 function renderCompYearTabs(selectedYear) {
@@ -1610,6 +1826,8 @@ async function bootstrapApp() {
   state.categories = await Api.listCategories().catch(() => []);
   state.compYear = new Date().getFullYear() < COMP_START_YEAR ? COMP_START_YEAR : new Date().getFullYear();
   await initMonthNav();
+  state.analyticsYear = state.year;
+  state.analyticsMonth = state.month;
   document.getElementById("topbar-sub").textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
   setExpenseTab("variable");
   switchView("home");
