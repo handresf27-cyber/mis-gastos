@@ -79,6 +79,7 @@
       <button class="nav-item" data-view="cards"><span class="ic">💳</span> Tarjetas</button>
       <button class="nav-item" data-view="funds"><span class="ic">🏦</span> Fondos</button>
       <button class="nav-item" data-view="categories"><span class="ic">🏷️</span> Categorías</button>
+      <button class="nav-item" data-view="calc"><span class="ic">🧮</span> Calculadora</button>
       <button class="nav-item admin-only hidden" data-view="admin"><span class="ic">🛡️</span> Admin</button>
       <div class="sidebar-footer">
         <div class="sidebar-user" id="sidebar-user"></div>
@@ -316,6 +317,20 @@
           </div>
         </section>
 
+        <!-- CALCULADORA -->
+        <section id="view-calc" class="view hidden">
+          <div class="section-head"><h2>Calculadora</h2></div>
+          <div class="calc-total-bar">
+            <span class="calc-total-label">Total</span>
+            <span class="calc-total-value tabular" id="calc-total">$0</span>
+          </div>
+          <div id="calc-rows"></div>
+          <div class="calc-footer-actions">
+            <button class="btn btn-primary" id="calc-add-btn">+ Agregar fila</button>
+            <button class="btn btn-ghost" id="calc-clear-btn">Limpiar</button>
+          </div>
+        </section>
+
       </main>
 
       <button class="fab" id="fab-add">+</button>
@@ -326,6 +341,7 @@
         <button data-view="cards"><span class="ic">💳</span>Tarjetas</button>
         <button data-view="funds"><span class="ic">🏦</span>Fondos</button>
         <button data-view="categories"><span class="ic">🏷️</span>Categorías</button>
+        <button data-view="calc"><span class="ic">🧮</span>Calc</button>
         <button class="admin-only hidden" data-view="admin"><span class="ic">🛡️</span>Admin</button>
       </nav>
     </div>
@@ -600,6 +616,28 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="fp-pay-cancel">Cancelar</button>
         <button type="button" class="btn btn-primary" id="fp-pay-confirm">Confirmar pago</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: editar gasto fijo ======= -->
+  <div id="modal-fp-edit" class="modal hidden">
+    <div class="modal-card" style="max-width:360px">
+      <div class="modal-head">
+        <h3>Editar gasto fijo</h3>
+        <button class="modal-close" id="fp-edit-close">&times;</button>
+      </div>
+      <div class="field">
+        <label>Nombre</label>
+        <input type="text" id="fp-edit-name" />
+      </div>
+      <div class="field">
+        <label>Valor (COP)</label>
+        <input type="number" id="fp-edit-amount" min="0" step="1" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fp-edit-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="fp-edit-save">Guardar</button>
       </div>
     </div>
   </div>

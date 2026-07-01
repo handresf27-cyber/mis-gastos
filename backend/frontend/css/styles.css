@@ -702,11 +702,12 @@ a { color: var(--accent); text-decoration: none; }
 .fp-pay-plan-label { font-weight: 600; font-size: 0.95rem; margin-bottom: 14px; color: var(--text); padding: 8px 12px; background: var(--surface); border-radius: 8px; }
 
 .fp-check {
-  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
   border: 2px solid var(--border); background: transparent;
-  color: var(--positive); font-size: 13px; font-weight: 700;
+  color: var(--positive); font-size: 15px; font-weight: 700;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: border-color 0.15s, background 0.15s;
+  touch-action: manipulation;
 }
 .fp-done .fp-check { border-color: var(--positive); background: rgba(95,184,122,0.15); }
 
@@ -1045,3 +1046,41 @@ a { color: var(--accent); text-decoration: none; }
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   object-fit: contain;
 }
+
+/* ============================================================ */
+/* CALCULADORA */
+/* ============================================================ */
+.calc-total-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; background: var(--surface); border-radius: 14px;
+  margin-bottom: 14px; border: 1px solid var(--border);
+}
+.calc-total-label { font-size: 13px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.02em; }
+.calc-total-value { font-size: 24px; font-weight: 700; color: var(--text); }
+.calc-total-value.positive { color: var(--positive); }
+.calc-total-value.negative { color: var(--negative); }
+
+.calc-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--border-faint);
+}
+.calc-label-input { flex: 2; min-width: 0; font-size: 14px; }
+.calc-amount-input { flex: 1.5; min-width: 80px; text-align: right; font-size: 14px; }
+
+.calc-sign-btn {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  font-size: 18px; font-weight: 700; cursor: pointer; line-height: 1;
+  border: 1.5px solid var(--border); background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation;
+}
+.calc-sign-btn.calc-pos { color: var(--positive); border-color: var(--positive); }
+.calc-sign-btn.calc-neg { color: var(--negative); border-color: var(--negative); }
+
+.calc-del-btn {
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  font-size: 14px; padding: 6px 8px; flex-shrink: 0; touch-action: manipulation;
+}
+.calc-del-btn:hover { color: var(--negative); }
+
+.calc-footer-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }

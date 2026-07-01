@@ -12,6 +12,7 @@ const state = {
   charts: {},
   analyticsYear: new Date().getFullYear(),
   analyticsMonth: new Date().getMonth() + 1,
+  calcRows: [],
 };
 
 const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -106,7 +107,7 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
 
-  const titles = { home: "Inicio", metrics: "Analítica", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", admin: "Administración" };
+  const titles = { home: "Inicio", metrics: "Analítica", cards: "Tarjetas de Crédito", funds: "Fondos administrados", categories: "Categorías", calc: "Calculadora", admin: "Administración" };
   document.getElementById("topbar-title").firstChild.textContent = (titles[view] || view) + " ";
 
   // El navegador de meses solo aplica a home
@@ -119,6 +120,7 @@ function switchView(view) {
   if (view === "funds") loadFunds();
   if (view === "admin") loadAdmin();
   if (view === "categories") loadCategories();
+  if (view === "calc") loadCalc();
 }
 
 document.querySelectorAll(".nav-item[data-view], .bottom-nav button[data-view]").forEach((b) => {
@@ -393,19 +395,7 @@ function renderFixedPlans(plans) {
   list.querySelectorAll(".fp-edit").forEach((btn) => {
     btn.addEventListener("click", () => {
       const plan = state.fixedPlans.find((p) => p.id === parseInt(btn.dataset.id));
-      if (!plan) return;
-      const newName = prompt("Nombre:", plan.name);
-      if (newName === null) return;
-      const newAmt = prompt("Valor (COP):", Math.round(plan.amount));
-      if (newAmt === null) return;
-      Api.updateFixedPlan(plan.id, { name: newName.trim() || plan.name, amount: parseFloat(newAmt) || plan.amount })
-        .then(async () => {
-          const plans = await Api.listFixedPlans(state.year, state.month);
-          state.fixedPlans = plans;
-          renderFixedPlans(plans);
-          if (plan.is_executed) loadHome();
-        })
-        .catch((err) => showToast(err.message));
+      if (plan) openFpEditModal(plan);
     });
   });
 
@@ -424,7 +414,6 @@ function openFpPayModal(planId, planName) {
   document.getElementById("fp-pay-date").value = new Date().toISOString().slice(0, 10);
   document.getElementById("fp-pay-notes").value = "";
   document.getElementById("modal-fp-pay").classList.remove("hidden");
-  setTimeout(() => document.getElementById("fp-pay-notes").focus(), 80);
 }
 
 function closeFpPayModal() {
@@ -445,6 +434,40 @@ document.getElementById("fp-pay-confirm").addEventListener("click", async () => 
     state.fixedPlans = plans;
     renderFixedPlans(plans);
     loadHome();
+  } catch (err) { showToast(err.message); }
+});
+
+// ── Modal: editar gasto fijo ─────────────────────────────────────
+let _fpEditPlanId = null;
+
+function openFpEditModal(plan) {
+  _fpEditPlanId = plan.id;
+  document.getElementById("fp-edit-name").value = plan.name;
+  document.getElementById("fp-edit-amount").value = Math.round(plan.amount);
+  document.getElementById("modal-fp-edit").classList.remove("hidden");
+  setTimeout(() => document.getElementById("fp-edit-name").select(), 60);
+}
+
+function closeFpEditModal() {
+  document.getElementById("modal-fp-edit").classList.add("hidden");
+}
+
+document.getElementById("fp-edit-close").addEventListener("click", closeFpEditModal);
+document.getElementById("fp-edit-cancel").addEventListener("click", closeFpEditModal);
+
+document.getElementById("fp-edit-save").addEventListener("click", async () => {
+  const name = document.getElementById("fp-edit-name").value.trim();
+  const amount = parseFloat(document.getElementById("fp-edit-amount").value);
+  if (!name) { showToast("El nombre no puede estar vacío"); return; }
+  if (!amount || amount <= 0) { showToast("Ingresa un valor válido"); return; }
+  closeFpEditModal();
+  const plan = state.fixedPlans.find((p) => p.id === _fpEditPlanId);
+  try {
+    await Api.updateFixedPlan(_fpEditPlanId, { name, amount });
+    const plans = await Api.listFixedPlans(state.year, state.month);
+    state.fixedPlans = plans;
+    renderFixedPlans(plans);
+    if (plan?.is_executed) loadHome();
   } catch (err) { showToast(err.message); }
 });
 
@@ -1901,6 +1924,97 @@ async function bootstrapApp() {
   setExpenseTab("variable");
   switchView("home");
 }
+
+// ============ CALCULADORA ============
+const CALC_KEY = "gastos_calc";
+
+function loadCalc() {
+  const stored = localStorage.getItem(CALC_KEY);
+  state.calcRows = stored ? JSON.parse(stored) : [];
+  if (!state.calcRows.length) {
+    state.calcRows = [{ id: 1, label: "", amount: "", sign: "+" }];
+  }
+  renderCalc();
+}
+
+function saveCalcState() {
+  localStorage.setItem(CALC_KEY, JSON.stringify(state.calcRows));
+}
+
+function calcTotal() {
+  return state.calcRows.reduce((s, r) => {
+    const v = parseFloat(r.amount) || 0;
+    return s + (r.sign === "-" ? -v : v);
+  }, 0);
+}
+
+function renderCalc() {
+  const container = document.getElementById("calc-rows");
+  if (!container) return;
+  const total = calcTotal();
+  const totalEl = document.getElementById("calc-total");
+  totalEl.textContent = cop(total);
+  totalEl.className = "calc-total-value tabular" + (total < 0 ? " negative" : total > 0 ? " positive" : "");
+
+  container.innerHTML = state.calcRows.map((r, i) => `
+    <div class="calc-row">
+      <input class="calc-label-input" type="text" value="${escapeHtml(r.label || "")}" placeholder="Descripción..." data-idx="${i}" data-field="label" />
+      <button class="calc-sign-btn ${r.sign === "-" ? "calc-neg" : "calc-pos"}" data-idx="${i}">${r.sign === "-" ? "−" : "+"}</button>
+      <input class="calc-amount-input tabular" type="number" value="${r.amount}" placeholder="0" data-idx="${i}" data-field="amount" min="0" step="1" />
+      <button class="calc-del-btn" data-idx="${i}">✕</button>
+    </div>
+  `).join("");
+
+  container.querySelectorAll(".calc-label-input, .calc-amount-input").forEach((inp) => {
+    inp.addEventListener("input", () => {
+      const idx = parseInt(inp.dataset.idx);
+      state.calcRows[idx][inp.dataset.field] = inp.value;
+      saveCalcState();
+      const t = calcTotal();
+      const el = document.getElementById("calc-total");
+      el.textContent = cop(t);
+      el.className = "calc-total-value tabular" + (t < 0 ? " negative" : t > 0 ? " positive" : "");
+    });
+  });
+
+  container.querySelectorAll(".calc-sign-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.idx);
+      state.calcRows[idx].sign = state.calcRows[idx].sign === "+" ? "-" : "+";
+      saveCalcState();
+      renderCalc();
+    });
+  });
+
+  container.querySelectorAll(".calc-del-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.idx);
+      state.calcRows.splice(idx, 1);
+      if (!state.calcRows.length) {
+        state.calcRows = [{ id: Date.now(), label: "", amount: "", sign: "+" }];
+      }
+      saveCalcState();
+      renderCalc();
+    });
+  });
+}
+
+document.getElementById("calc-add-btn").addEventListener("click", () => {
+  state.calcRows.push({ id: Date.now(), label: "", amount: "", sign: "+" });
+  saveCalcState();
+  renderCalc();
+  setTimeout(() => {
+    const inputs = document.querySelectorAll(".calc-label-input");
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }, 50);
+});
+
+document.getElementById("calc-clear-btn").addEventListener("click", () => {
+  if (!confirm("¿Limpiar la calculadora?")) return;
+  state.calcRows = [{ id: Date.now(), label: "", amount: "", sign: "+" }];
+  saveCalcState();
+  renderCalc();
+});
 
 (async function init() {
   if (Api.token) {
